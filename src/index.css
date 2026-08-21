@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Vibrant Enterprise Purple Theme System */
+    --background: 270 30% 98%;
+    --foreground: 260 40% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 260 40% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 40% 12%;
+
+    /* Brand Primary Purple (#7c3aed / #6d28d9) */
+    --primary: 267 84% 54%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Lavender Secondary (#f5f3ff) */
+    --secondary: 270 60% 96%;
+    --secondary-foreground: 267 84% 30%;
+
+    --muted: 270 40% 96.5%;
+    --muted-foreground: 260 15% 45%;
+
+    --accent: 270 70% 95%;
+    --accent-foreground: 267 84% 30%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 270 30% 91%;
+    --input: 270 30% 91%;
+    --ring: 267 84% 54%;
+
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 267 84% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 267 84% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Premium Dark Mode Global Utility Overrides */
+.dark body {
+  background-color: #030712 !important;
+  color: #f8fafc !important;
+}
+
+.dark .bg-white {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #1e293b !important;
+}
+
+.dark .bg-slate-50,
+.dark .bg-purple-50,
+.dark .bg-purple-50\/50,
+.dark .bg-purple-50\/60,
+.dark .bg-purple-50\/70,
+.dark .bg-slate-100 {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-purple-950,
+.dark .text-purple-900 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-600,
+.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+.dark .border-purple-100,
+.dark .border-purple-200,
+.dark .border-slate-100,
+.dark .border-slate-200 {
+  border-color: #1e293b !important;
+}
+
+.dark table thead th,
+.dark table thead tr {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark table tbody td,
+.dark table tbody tr {
+  border-color: #1e293b !important;
+}
+
+.dark table tbody tr:hover {
+  background-color: #1e293b/60 !important;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}

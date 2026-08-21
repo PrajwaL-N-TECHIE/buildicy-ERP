@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for security enforcement
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserData().roleTier == 'admin';
+    }
+
+    function isReviewer() {
+      return isAuthenticated() && getUserData().roleTier == 'reviewer';
+    }
+
+    function isContributor() {
+      return isAuthenticated() && getUserData().roleTier == 'contributor';
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      // Admins full access. Users can read user profiles to select assignees/participants.
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // PROJECTS COLLECTION
+    match /projects/{projectId} {
+      allow read: if isAuthenticated();
+      // Admins can create/edit projects. Reviewers can update project deadline.
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isReviewer() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deadline']));
+    }
+
+    // TASKS COLLECTION
+    match /tasks/{taskId} {
+      // Admins read/write all tasks
+      allow read, write: if isAdmin();
+
+      // Reviewers:
+      // - read tasks submitted for review
+      // - update task status from Submitted -> Pending Admin or In Progress
+      // - create task assigned to interns
+      allow read: if isReviewer() && (resource.data.status == 'Submitted' || resource.data.reviewerId == request.auth.uid);
+      allow create: if isReviewer() && get(/databases/$(database)/documents/users/$(request.resource.data.contributorId)).data.roleTier == 'contributor';
+      allow update: if isReviewer() && resource.data.status == 'Submitted';
+
+      // Contributors:
+      // - read own tasks
+      // - create task assigned to self (contributorId == auth.uid)
+      // - update own task status (cannot directly set status to 'Completed')
+      allow read: if isContributor() && resource.data.contributorId == request.auth.uid;
+      allow create: if isContributor() && request.resource.data.contributorId == request.auth.uid && request.resource.data.assignedBy == null;
+      allow update: if isContributor() && resource.data.contributorId == request.auth.uid && request.resource.data.status != 'Completed';
+    }
+
+    // MEETINGS COLLECTION
+    match /meetings/{meetingId} {
+      allow read: if isAuthenticated() && (isAdmin() || isReviewer() || resource.data.participantIds.hasAny([request.auth.uid]));
+      allow create, update, delete: if isAdmin() || isReviewer();
+    }
+
+    // MAIL COLLECTION (Feeds Trigger Email Firebase Extension)
+    match /mail/{mailId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}
