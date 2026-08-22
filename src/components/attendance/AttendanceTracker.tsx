@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { AttendanceRecord } from '@/types';
+import { todayIso } from '@/lib/date';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ export const AttendanceTracker: React.FC = () => {
 
   if (!currentUser) return null;
 
-  const todayStr = '2026-08-21';
+  const todayStr = todayIso();
   const isIntern = currentUser.roleTier === 'contributor';
   const isAdminOrReviewer = currentUser.roleTier === 'admin' || currentUser.roleTier === 'reviewer';
 
@@ -232,7 +233,7 @@ export const AttendanceTracker: React.FC = () => {
                       </TableCell>
 
                       <TableCell className="py-3.5 px-3 font-extrabold text-xs text-purple-950">
-                        {tasks.filter(t => t.contributorId === rec.userId && t.taskDate === '2026-08-21').reduce((sum, t) => sum + (t.hours || 0), 0)} hrs
+                        {tasks.filter(t => t.contributorId === rec.userId && t.taskDate === todayIso()).reduce((sum, t) => sum + (t.hours || 0), 0)} hrs
                       </TableCell>
 
                       <TableCell className="py-3.5 px-3 text-right">

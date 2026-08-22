@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { ChatMessage, User } from '@/types';
+import { todayIso } from '@/lib/date';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -275,7 +276,7 @@ export const TeamChatView: React.FC = () => {
 
               <div className="space-y-1">
                 {filteredUsers.map(user => {
-                  const isCheckedIn = attendanceRecords.some(r => r.userId === user.id && r.date === '2026-08-21' && r.status === 'checked_in');
+                  const isCheckedIn = attendanceRecords.some(r => r.userId === user.id && r.date === todayIso() && r.status === 'checked_in');
 
                   return (
                     <button
@@ -358,7 +359,7 @@ export const TeamChatView: React.FC = () => {
             <div>
               <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 {isDirectChat ? activeRecipient?.fullName : `#${activeChannel?.name}`}
-                {isDirectChat && attendanceRecords.some(r => r.userId === activeRecipient?.id && r.date === '2026-08-21' && r.status === 'checked_in') && (
+                {isDirectChat && attendanceRecords.some(r => r.userId === activeRecipient?.id && r.date === todayIso() && r.status === 'checked_in') && (
                   <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
                     ● Online
                   </span>

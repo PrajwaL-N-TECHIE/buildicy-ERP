@@ -13,6 +13,7 @@ const firebaseConfig = {
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export { app };
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
@@ -214,7 +215,7 @@ export const SEED_PROJECTS: Project[] = [
       dueDate: '2026-09-30',
       note: 'Q3 Brand & Outreach Campaign',
       setBy: 'user-3',
-      setAt: '2026-08-21T09:30:00.000Z'
+      setAt: '2025-09-15T09:30:00.000Z'
     }
   },
   {
@@ -232,24 +233,26 @@ export const SEED_PROJECTS: Project[] = [
   }
 ];
 
-// Varied priorities (Urgent, High, Medium, Low) and due dates (Overdue vs Approaching vs Normal)
+// Seed data uses 2025 dates — historical, so analytics/overdue views can
+// still demonstrate "Overdue vs Approaching vs Normal" without conflicting
+// with live runtime "today". Migrated away from the demo date 2026-08-21.
 export const SEED_TASKS: Task[] = [
   {
     id: 'task-1',
     contributorId: 'user-5',
     assignedBy: null,
     projectId: 'proj-1',
-    taskDate: '2026-08-21',
-    dueDate: '2026-08-22', // Approaching due date
+    taskDate: '2025-09-15',
+    dueDate: '2025-09-16', // Approaching due date
     description: 'Optimize WebRTC audio streaming latencies in Voice Agent handler',
     hours: 5,
     priority: 'high',
     status: 'In Progress',
-    createdAt: '2026-08-21T08:00:00.000Z',
-    updatedAt: '2026-08-21T09:00:00.000Z',
+    createdAt: '2025-09-15T08:00:00.000Z',
+    updatedAt: '2025-09-15T09:00:00.000Z',
     activityLog: [
-      { id: 'act-1', timestamp: '2026-08-21T08:00:00.000Z', actorName: 'Shiva', actorRole: 'contributor', action: 'Created task (Self-logged)' },
-      { id: 'act-2', timestamp: '2026-08-21T09:00:00.000Z', actorName: 'Shiva', actorRole: 'contributor', action: 'Status changed to In Progress' }
+      { id: 'act-1', timestamp: '2025-09-15T08:00:00.000Z', actorName: 'Shiva', actorRole: 'contributor', action: 'Created task (Self-logged)' },
+      { id: 'act-2', timestamp: '2025-09-15T09:00:00.000Z', actorName: 'Shiva', actorRole: 'contributor', action: 'Status changed to In Progress' }
     ]
   },
   {
@@ -264,10 +267,10 @@ export const SEED_TASKS: Task[] = [
     priority: 'urgent',
     status: 'Submitted',
     createdAt: '2026-08-20T11:00:00.000Z',
-    updatedAt: '2026-08-21T10:30:00.000Z',
+    updatedAt: '2025-09-15T10:30:00.000Z',
     activityLog: [
-      { id: 'act-3', timestamp: '2026-08-20T11:00:00.000Z', actorName: 'Mizbha Fathima', actorRole: 'reviewer', action: 'Assigned task to Parish' },
-      { id: 'act-4', timestamp: '2026-08-21T10:30:00.000Z', actorName: 'Parish', actorRole: 'contributor', action: 'Submitted task for review' }
+      { id: 'act-3', timestamp: '2025-09-14T11:00:00.000Z', actorName: 'Mizbha Fathima', actorRole: 'reviewer', action: 'Assigned task to Parish' },
+      { id: 'act-4', timestamp: '2025-09-15T10:30:00.000Z', actorName: 'Parish', actorRole: 'contributor', action: 'Submitted task for review' }
     ]
   },
   {
@@ -276,7 +279,7 @@ export const SEED_TASKS: Task[] = [
     assignedBy: 'user-2',
     projectId: 'proj-3',
     taskDate: '2026-08-19',
-    dueDate: '2026-08-21', // Due Today
+    dueDate: '2025-09-15', // Due Today (historical demo seed)
     description: 'Draft API documentation for Bizbrain reporting endpoints',
     hours: 4,
     priority: 'high',
@@ -356,7 +359,7 @@ export const SEED_MEETINGS: Meeting[] = [
     location: 'Google Meet (meet.google.com/abc-defg-hij)',
     notes: 'Review audio buffer latency benchmarks and model accuracy.',
     createdBy: 'user-1',
-    createdAt: '2026-08-21T09:00:00.000Z'
+    createdAt: '2025-09-15T09:00:00.000Z'
   },
   {
     id: 'meet-2',
@@ -367,14 +370,14 @@ export const SEED_MEETINGS: Meeting[] = [
     location: 'Conference Room 2',
     notes: 'Finalize brand guidelines and copy approval deck.',
     createdBy: 'user-3',
-    createdAt: '2026-08-21T11:00:00.000Z'
+    createdAt: '2025-09-15T11:00:00.000Z'
   }
 ];
 
 export const SEED_AUDIT_LOGS: SystemAuditLog[] = [
   {
     id: 'audit-1',
-    timestamp: '2026-08-21T10:30:00.000Z',
+    timestamp: '2025-09-15T10:30:00.000Z',
     actorId: 'user-1',
     actorName: 'Prajwal N',
     actorRole: 'admin',
@@ -384,7 +387,7 @@ export const SEED_AUDIT_LOGS: SystemAuditLog[] = [
   },
   {
     id: 'audit-2',
-    timestamp: '2026-08-21T09:30:00.000Z',
+    timestamp: '2025-09-15T09:30:00.000Z',
     actorId: 'user-3',
     actorName: 'Mizbha Fathima',
     actorRole: 'reviewer',
@@ -394,7 +397,7 @@ export const SEED_AUDIT_LOGS: SystemAuditLog[] = [
   },
   {
     id: 'audit-3',
-    timestamp: '2026-08-21T09:00:00.000Z',
+    timestamp: '2025-09-15T09:00:00.000Z',
     actorId: 'user-1',
     actorName: 'Prajwal N',
     actorRole: 'admin',

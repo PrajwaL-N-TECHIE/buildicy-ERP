@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Sidebar } from './Sidebar';
+import { todayIso } from '@/lib/date';
 import { NotificationLog } from '@/components/common/NotificationLog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +36,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, activeTab, onSel
 
   if (!currentUser) return <>{children}</>;
 
-  const todayStr = '2026-08-21';
+  const todayStr = todayIso();
   const isIntern = currentUser.roleTier === 'contributor';
 
   // Active check-in record for current intern user

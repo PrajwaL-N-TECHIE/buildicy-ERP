@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Task, TaskStatus, TaskPriority } from '@/types';
+import { todayIso } from '@/lib/date';
 import { TaskReviewDialog } from './TaskReviewDialog';
 import { TaskDetailDrawer } from './TaskDetailDrawer';
 import { KanbanBoard } from './KanbanBoard';
@@ -71,11 +72,12 @@ export const TaskList: React.FC<TaskListProps> = ({ onOpenCreateTask }) => {
 
   // Date Range Filter
   if (selectedDateRangeFilter !== 'all') {
-    const today = new Date('2026-08-21');
+    const today = new Date();
+    const todayStr = todayIso();
     visibleTasks = visibleTasks.filter(t => {
       const taskD = new Date(t.taskDate);
       if (selectedDateRangeFilter === 'today') {
-        return t.taskDate === '2026-08-21';
+        return t.taskDate === todayStr;
       } else if (selectedDateRangeFilter === 'week') {
         const diffDays = Math.abs((today.getTime() - taskD.getTime()) / (1000 * 3600 * 24));
         return diffDays <= 7;

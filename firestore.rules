@@ -2,7 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions for security enforcement
+    // ============================================================
+    // Helpers
+    // ============================================================
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,65 +13,167 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function roleTier() {
+      return getUserData().roleTier;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && getUserData().roleTier == 'admin';
+      return isAuthenticated() && roleTier() == 'admin';
     }
 
     function isReviewer() {
-      return isAuthenticated() && getUserData().roleTier == 'reviewer';
+      return isAuthenticated() && roleTier() == 'reviewer';
     }
 
     function isContributor() {
-      return isAuthenticated() && getUserData().roleTier == 'contributor';
+      return isAuthenticated() && roleTier() == 'contributor';
     }
 
-    // USERS COLLECTION
+    function isReviewerOfTask(taskData) {
+      return taskData.reviewerId == request.auth.uid
+          || taskData.assignedBy == request.auth.uid;
+    }
+
+    function isAssignee(taskData) {
+      return taskData.contributorId == request.auth.uid;
+    }
+
+    function isProjectMember(projectData) {
+      return projectData.memberIds.hasAny([request.auth.uid]);
+    }
+
+    // ============================================================
+    // USERS
+    // ============================================================
     match /users/{userId} {
-      // Admins full access. Users can read user profiles to select assignees/participants.
+      // Anyone signed in can see user profiles (needed for assignee pickers).
       allow read: if isAuthenticated();
+
+      // Only admins may mutate user records (Phase 1 keeps self password
+      // changes off the rules path; updatePassword uses the Auth REST API).
       allow write: if isAdmin();
+
+      // Salary, phone, personalEmail are admin-only readable too. We split
+      // PII into a subcollection below for safer defaults.
+      match /private/{document=**} {
+        allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
+        allow write: if isAdmin();
+      }
     }
 
-    // PROJECTS COLLECTION
+    // ============================================================
+    // PROJECTS — reads allowed, writes server-only via Phase 5 callables.
+    // ============================================================
     match /projects/{projectId} {
       allow read: if isAuthenticated();
-      // Admins can create/edit projects. Reviewers can update project deadline.
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (isReviewer() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deadline']));
+      allow write: if false;
     }
 
-    // TASKS COLLECTION
+    // ============================================================
+    // TASKS — reads per RBAC, writes server-only via Phase 5 callables.
+    // ============================================================
     match /tasks/{taskId} {
-      // Admins read/write all tasks
-      allow read, write: if isAdmin();
+      allow read: if isAdmin()
+        || (isReviewer()
+            && (resource.data.status == 'Submitted'
+                || resource.data.status == 'Pending Admin'
+                || isReviewerOfTask(resource.data)))
+        || (isContributor() && isAssignee(resource.data));
 
-      // Reviewers:
-      // - read tasks submitted for review
-      // - update task status from Submitted -> Pending Admin or In Progress
-      // - create task assigned to interns
-      allow read: if isReviewer() && (resource.data.status == 'Submitted' || resource.data.reviewerId == request.auth.uid);
-      allow create: if isReviewer() && get(/databases/$(database)/documents/users/$(request.resource.data.contributorId)).data.roleTier == 'contributor';
-      allow update: if isReviewer() && resource.data.status == 'Submitted';
-
-      // Contributors:
-      // - read own tasks
-      // - create task assigned to self (contributorId == auth.uid)
-      // - update own task status (cannot directly set status to 'Completed')
-      allow read: if isContributor() && resource.data.contributorId == request.auth.uid;
-      allow create: if isContributor() && request.resource.data.contributorId == request.auth.uid && request.resource.data.assignedBy == null;
-      allow update: if isContributor() && resource.data.contributorId == request.auth.uid && request.resource.data.status != 'Completed';
+      allow write: if false;
     }
 
-    // MEETINGS COLLECTION
+    // ============================================================
+    // MEETINGS — reads per RBAC, writes server-only via Phase 5 callables.
+    // ============================================================
     match /meetings/{meetingId} {
-      allow read: if isAuthenticated() && (isAdmin() || isReviewer() || resource.data.participantIds.hasAny([request.auth.uid]));
-      allow create, update, delete: if isAdmin() || isReviewer();
+      allow read: if isAuthenticated()
+        && (isAdmin() || isReviewer()
+            || resource.data.participantIds.hasAny([request.auth.uid]));
+
+      allow write: if false;
     }
 
-    // MAIL COLLECTION (Feeds Trigger Email Firebase Extension)
-    match /mail/{mailId} {
-      allow create: if isAuthenticated();
+    // ============================================================
+    // AUDIT LOGS — server-only writes. Phase 8 keeps this locked.
+    // ============================================================
+    match /audit_logs/{id} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ============================================================
+    // ATTENDANCE — reads per RBAC, writes server-only via Phase 5 callables.
+    // ============================================================
+    match /attendance/users/{uid}/sessions/{date} {
+      allow read: if isAdmin() || isReviewer() || request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ============================================================
+    // CHAT
+    // ============================================================
+    // Channel metadata. Channel membership is enforced here.
+    match /chat/_meta/channels/{channelId} {
+      allow read: if isAuthenticated()
+        && (resource.data.memberIds.hasAny([request.auth.uid]) || isAdmin());
+      // Channel meta writes are server-only (Phase 3+ callable).
+      allow write: if false;
+    }
+
+    // Channel messages.
+    match /chat/channels/{channelId}/messages/{msgId} {
+      allow read: if isAuthenticated()
+        && (get(/databases/$(database)/documents/chat/_meta/channels/$(channelId)).data.memberIds.hasAny([request.auth.uid])
+            || isAdmin());
+      // Sender must be the current user; size cap to prevent abuse.
+      allow create: if isAuthenticated()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.text.size() <= 4000;
+      allow update, delete: if false; // immutable once written
+    }
+
+    // Direct messages. dmId = sorted(uidA,uidB).join('_').
+    match /chat/dms/{dmId}/messages/{msgId} {
+      allow read: if isAuthenticated() && dmId.split('_').hasAny([request.auth.uid]);
+      allow create: if isAuthenticated()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.text.size() <= 4000;
+      allow update, delete: if false;
+    }
+
+    // ============================================================
+    // MAIL — DEPRECATED. Phase 4 moved email to Resend via Cloud
+    // Functions. The /mail collection is no longer written; reads are
+    // also denied. The collection can be deleted in Phase 9.
+    // ============================================================
+    match /mail/{id} {
+      allow read, write: if false;
+    }
+
+    // ============================================================
+    // NOTIFICATION LOG — server-only idempotency tracker (Phase 9).
+    // ============================================================
+    match /notification_log/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ============================================================
+    // CLIENT LOGS — opt-in low-rate error reporting from SPA.
+    // ============================================================
+    match /client_logs/{id} {
+      allow create: if isAuthenticated()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.ts == request.time;
       allow read, update, delete: if isAdmin();
+    }
+
+    // ============================================================
+    // DEFAULT — deny everything else.
+    // ============================================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { sendDailyOverdueDigestEmail } from '@/firebase/notifications';
+import { todayIso } from '@/lib/date';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,7 +51,7 @@ export const ExecutiveOverview: React.FC = () => {
   const [isSendingDigest, setIsSendingDigest] = useState<boolean>(false);
   const [digestSuccessMsg, setDigestSuccessMsg] = useState<string>('');
 
-  const todayStr = '2026-08-21';
+  const todayStr = todayIso();
   const today = new Date(todayStr);
 
   // Aggregated Metrics
@@ -139,7 +140,7 @@ export const ExecutiveOverview: React.FC = () => {
     setDigestSuccessMsg('');
     try {
       const founders = users.filter(u => u.roleTier === 'admin');
-      await sendDailyOverdueDigestEmail(overdueTasks, founders, projects, users);
+      await sendDailyOverdueDigestEmail(overdueTasks, founders);
       setDigestSuccessMsg(`Overdue digest email successfully dispatched to ${founders.length} admin accounts!`);
     } catch (err) {
       console.error('Error dispatching digest:', err);

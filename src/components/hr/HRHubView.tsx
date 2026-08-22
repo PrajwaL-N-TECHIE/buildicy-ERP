@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { User, RoleTier } from '@/types';
+import { todayIso } from '@/lib/date';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -442,8 +443,8 @@ export const HRHubView: React.FC = () => {
               </TableHeader>
               <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {users.map(u => {
-                  const isCheckedIn = attendanceRecords.some(r => r.userId === u.id && r.date === '2026-08-21' && r.status === 'checked_in');
-                  const userAttRecord = attendanceRecords.find(r => r.userId === u.id && r.date === '2026-08-21');
+                  const isCheckedIn = attendanceRecords.some(r => r.userId === u.id && r.date === todayIso() && r.status === 'checked_in');
+                  const userAttRecord = attendanceRecords.find(r => r.userId === u.id && r.date === todayIso());
                   const workedHours = userAttRecord ? userAttRecord.totalWorkedHoursToday : (u.id === 'user-5' ? 5 : 0);
 
                   return (

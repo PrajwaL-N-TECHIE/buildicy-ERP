@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { User, RoleTier } from '@/types';
+import { todayIso } from '@/lib/date';
 import { OrgTreeViewer } from './OrgTreeViewer';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -278,12 +279,12 @@ export const PeopleManagement: React.FC = () => {
                   </TableCell>
 
                   <TableCell className="py-3.5 px-3 font-extrabold text-xs text-purple-950">
-                    {tasks.filter(t => t.contributorId === u.id && t.taskDate === '2026-08-21').reduce((sum, t) => sum + (t.hours || 0), 0)} hrs
+                    {tasks.filter(t => t.contributorId === u.id && t.taskDate === todayIso()).reduce((sum, t) => sum + (t.hours || 0), 0)} hrs
                   </TableCell>
 
                   <TableCell className="py-3.5 px-3 text-right">
                     <div className="flex items-center justify-end space-x-2">
-                      {attendanceRecords.some(r => r.userId === u.id && r.date === '2026-08-21' && r.status === 'checked_in') && (
+                      {attendanceRecords.some(r => r.userId === u.id && r.date === todayIso() && r.status === 'checked_in') && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse">
                           ● Checked In
                         </span>
