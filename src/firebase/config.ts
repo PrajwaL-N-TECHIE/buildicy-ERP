@@ -5,12 +5,12 @@ import { writeThrough } from '@/data/localStorageMirror';
 import { User, Project, Task, Meeting, MailNotification, SystemAuditLog } from '@/types';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyB6uR_FnGSDSXLopyUe-cDDaCUFCbmdR3U",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "erp-buildicy.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "erp-buildicy",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "erp-buildicy.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "614662467194",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:614662467194:web:6a0399893c20b9f77a15c3"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);

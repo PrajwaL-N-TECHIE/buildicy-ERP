@@ -3,6 +3,8 @@
 **Status**: All phases complete (0–9).
 **Goal**: move from `localStorage` as truth → Firestore as truth, with Cloud Functions owning all writes, real-time listeners replacing WebSocket, `localStorage` reduced to an offline cache. All on Firebase Spark (free) + Vercel Hobby (free) + Resend free tier (3K emails/mo).
 
+> **Note on hosting topology**: we use **three** services, not four. Render is not part of the final stack because Firestore triggers (the way the backend reacts to task/project/meeting changes) only run inside Firebase's own infrastructure. Render cannot subscribe to Firestore write events, and Firestore does not push webhooks to external services. So "Render hosting backend" is effectively satisfied by **Firebase Cloud Functions** — Render has no role here. The 3 services are: **Vercel (SPA)** + **Firebase (DB + Auth + backend logic)** + **Resend (email)**.
+
 ---
 
 ## Final architecture (post Phase 9)
@@ -24,7 +26,7 @@
                                   │ TLS
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                            Hosting split                                      │
+│                            Hosting split (3 services)                         │
 │                                                                              │
 │   ┌──────────────────────────┐         ┌─────────────────────────────────┐   │
 │   │  Vercel (Hobby, free)    │         │   Firebase (Spark, free)        │   │
@@ -80,6 +82,16 @@
 
 Read paths: SPA `useTasks` / `useChatRealtime` / etc. via Firestore `onSnapshot` + react-query + IndexedDB persister.
 Write paths: SPA only writes through callable Cloud Functions (Phase 5+). Direct client writes denied by rules. Chat messages use append-only client writes for performance (low-value data).
+
+### Why Render is not part of this stack
+
+Render is a great general-purpose Node/Express host, but it does not fit this architecture for two reasons:
+
+1. **Firestore triggers can only run in Cloud Functions.** The `onTaskWritten` / `onProjectWritten` / `onMeetingCreated` patterns require Firebase's own runtime that subscribes to Firestore write events. Render cannot subscribe to these events, and Firestore does not push webhooks to external services.
+
+2. **Firebase callable functions need Firebase Hosting or Functions as the endpoint.** The `httpsCallable` protocol used by Phase 5's `cf.ts` wrappers is terminated by Firebase infrastructure. Render cannot serve those calls.
+
+The natural alternatives — Express on Render with `firebase-admin`, or polling Firestore from Render — would either lose the real-time email dispatch or burn quota unnecessarily. Keeping the backend in Cloud Functions is the right fit.
 
 ---
 
@@ -202,12 +214,14 @@ All callable functions set `updatedBy` + `updatedByName` so the audit trigger ca
 
 | Service | Free tier | Monthly cost |
 |---|---|---|
-| **Vercel** Hobby | 100 GB bandwidth, 1M Edge Requests, 6K build min/mo | **$0** |
+| **Vercel** Hobby (SPA) | 100 GB bandwidth, 1M Edge Requests, 6K build min/mo | **$0** |
 | **Firebase Auth** | unlimited | **$0** |
 | **Firestore** | 20K writes/day, 50K reads/day, 1 GB | **$0** |
-| **Cloud Functions** | 2M invocations/mo | **$0** |
-| **Resend** | 3,000 emails/mo, 100/day | **$0** |
+| **Cloud Functions** (backend) | 2M invocations/mo | **$0** |
+| **Resend** (email) | 3,000 emails/mo, 100/day | **$0** |
 | **Total** | | **$0/month** |
+
+> Render is **not** used in this stack. If you ever need a long-running HTTP service (e.g., webhook receivers from GitHub, public REST API for third parties), Render would be the right place for that — but that's a future feature, not part of this migration.
 
 ---
 
