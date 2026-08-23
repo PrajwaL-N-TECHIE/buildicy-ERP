@@ -1,15 +1,16 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { writeThrough } from '@/data/localStorageMirror';
 import { User, Project, Task, Meeting, MailNotification, SystemAuditLog } from '@/types';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "demo-api-key",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "task-tracker-erp.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "task-tracker-erp",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "task-tracker-erp.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:123456789:web:abc123def456"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyB6uR_FnGSDSXLopyUe-cDDaCUFCbmdR3U",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "erp-buildicy.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "erp-buildicy",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "erp-buildicy.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "614662467194",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:614662467194:web:6a0399893c20b9f77a15c3"
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
@@ -427,6 +428,8 @@ export const getStoredUsers = (): User[] => {
 
 export const saveUsers = (users: User[]) => {
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  // Phase 7: dual-write each user to Firestore via localStorageMirror.
+  users.forEach((u) => writeThrough('users', u));
 };
 
 export const getStoredProjects = (): Project[] => {
@@ -440,6 +443,7 @@ export const getStoredProjects = (): Project[] => {
 
 export const saveProjects = (projects: Project[]) => {
   localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
+  projects.forEach((p) => writeThrough('projects', p));
 };
 
 export const getStoredTasks = (): Task[] => {
@@ -453,6 +457,7 @@ export const getStoredTasks = (): Task[] => {
 
 export const saveTasks = (tasks: Task[]) => {
   localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+  tasks.forEach((t) => writeThrough('tasks', t));
 };
 
 export const getStoredMeetings = (): Meeting[] => {
@@ -466,6 +471,7 @@ export const getStoredMeetings = (): Meeting[] => {
 
 export const saveMeetings = (meetings: Meeting[]) => {
   localStorage.setItem(STORAGE_KEYS.MEETINGS, JSON.stringify(meetings));
+  meetings.forEach((m) => writeThrough('meetings', m));
 };
 
 export const getStoredNotifications = (): MailNotification[] => {
@@ -488,4 +494,7 @@ export const getStoredAuditLogs = (): SystemAuditLog[] => {
 
 export const saveAuditLogs = (logs: SystemAuditLog[]) => {
   localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+  // Phase 8: audit logs are server-only. SPA writes are queued for the
+  // Phase 8 callable to pick up; for now we still write LS so the
+  // in-app audit tab keeps showing entries.
 };

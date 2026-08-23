@@ -55,3 +55,7 @@ coverage/
 
 # Local migration tooling
 migration-backups/
+
+# Local tool directories
+.commandcode/
+

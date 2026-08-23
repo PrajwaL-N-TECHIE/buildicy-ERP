@@ -28,6 +28,7 @@ import {
   saveNotifications,
   saveAuditLogs,
 } from '@/firebase/config';
+import { writeThrough } from '@/data/localStorageMirror';
 import {
   signInWithCredentials,
   signOutCurrent,
