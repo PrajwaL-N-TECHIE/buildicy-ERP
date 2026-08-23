@@ -29,3 +29,11 @@ exports.scheduleMeeting = require('./src/meetings/scheduleMeeting').scheduleMeet
 exports.deleteMeeting = require('./src/meetings/deleteMeeting').deleteMeeting;
 exports.checkIn = require('./src/attendance/checkIn').checkIn;
 exports.checkOut = require('./src/attendance/checkOut').checkOut;
+
+// Audit log triggers (Phase 8)
+exports.audit_task = require('./src/audit/onAnyWrite').audit_task;
+exports.audit_project = require('./src/audit/onAnyWrite').audit_project;
+exports.audit_meeting = require('./src/audit/onAnyWrite').audit_meeting;
+
+// Scheduled digest (Phase 9)
+exports.scheduledDigest = require('./src/triggers/scheduledDigest').scheduledDigest;

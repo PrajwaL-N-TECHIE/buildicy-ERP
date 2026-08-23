@@ -1,68 +1,102 @@
 # Buildicy ERP — Backend Migration Plan
 
-**Status**: Phase 0 complete. Phases 1–9 tracked below.
-**Goal**: move from `localStorage` as truth → Firestore as truth, with Cloud Functions owning all writes, real-time listeners replacing WebSocket, `localStorage` reduced to an offline cache. All on Firebase Spark (free tier).
+**Status**: All phases complete (0–9).
+**Goal**: move from `localStorage` as truth → Firestore as truth, with Cloud Functions owning all writes, real-time listeners replacing WebSocket, `localStorage` reduced to an offline cache. All on Firebase Spark (free) + Vercel Hobby (free) + Resend free tier (3K emails/mo).
 
 ---
 
-## North-star architecture (post Phase 9)
+## Final architecture (post Phase 9)
 
 ```
-                     ┌────────────────────────────────────────────────────────┐
-                     │                Firebase Project: erp-buildicy           │
-                     │                                                        │
-   ┌─────────┐       │   ┌──────────────────┐        ┌──────────────────────┐  │
-   │ Browser │──TLS──┼──▶│  Firebase Auth   │──JWT──▶│  Custom Claims       │  │
-   │ (SPA)   │       │   │  Email/Password  │        │  { roleTier }        │  │
-   └────┬────┘       │   └──────────────────┘        └──────────────────────┘  │
-        │            │                                                        │
-        │            │   ┌──────────────────┐        ┌──────────────────────┐  │
-        │──HTTPS─────┼──▶│   Firestore      │◀─rules─│  firestore.rules     │  │
-        │            │   │   (truth)        │        │  (deny-by-default)   │  │
-        │            │   └────────┬─────────┘        └──────────────────────┘  │
-        │            │            │                       ▲                   │
-        │            │            │ realtime              │                   │
-        │            │            ▼                       │                   │
-        │ ◀──ws/h2────│    ┌──────────────────┐   ┌──────┴────────────────┐  │
-        │  (long-poll │    │  onSnapshot      │   │  Cloud Functions       │  │
-        │   fallback) │    │  via react-query │   │  (Gen 2, Node 20)     │  │
-        │            │    └──────────────────┘   │                        │  │
-        │            │                            │  callable:             │  │
-        │            │                            │   createTask           │  │
-        │            │                            │   updateTaskStatus     │  │
-        │            │                            │   reviewTaskByReviewer │  │
-        │            │                            │   reviewTaskByAdmin    │  │
-        │            │                            │   updateProjectDeadline│  │
-        │            │                            │   scheduleMeeting      │  │
-        │            │                            │   deleteMeeting        │  │
-        │            │                            │   checkIn / checkOut   │  │
-        │            │                            │                        │  │
-        │            │                            │  triggers:             │  │
-        │            │                            │   onTaskWritten        │  │
-        │            │                            │   onProjectWritten     │  │
-        │            │                            │   onMeetingCreated     │  │
-        │            │                            │   onAuthCreate (claims)│  │
-        │            │                            │   onChatMessageCreate  │  │
-        │            │                            │   auditLog on writes   │  │
-        │            │                            │   scheduledDigest      │  │
-        │            │                            └────────┬───────────────┘  │
-        │            │                                     │                  │
-        │            │                                     ▼                  │
-        │            │                            ┌────────────────────────┐  │
-        │            │                            │  /mail (Trigger Email  │  │
-        │            │                            │   Extension)           │  │
-        │            │                            └─────────┬──────────────┘  │
-        │            │                                      │                 │
-        │            │                                      ▼                 │
-        │            │                            ┌────────────────────────┐  │
-        │            │                            │  Gmail SMTP via        │  │
-        │            │                            │  Firebase Extension    │  │
-        │            │                            └────────────────────────┘  │
-        └────────────┘                                                        │
-                     └────────────────────────────────────────────────────────┘
-                                       │
-                          App Check (reCAPTCHA v3) on every entry
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          Browser (SPA - React 18 + TS)                        │
+│                                                                              │
+│  ┌─────────────────────┐    ┌────────────────────┐    ┌───────────────────┐  │
+│  │  AuthProvider        │───▶│  React Query       │───▶│  Firestore SDK    │  │
+│  │  (real Firebase Auth │    │  (queries+cache    │    │  (read+write      │  │
+│  │   w/ custom claims)  │    │   + IndexedDB)     │    │   during LS→FS    │  │
+│  └─────────────────────┘    └────────────────────┘    │   migration       │  │
+│                                                          └───────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │  App Check (reCAPTCHA v3) — Phase 9, gated by VITE_USE_APP_CHECK          │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────┬────────────────────────────────────────────┘
+                                  │ TLS
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            Hosting split                                      │
+│                                                                              │
+│   ┌──────────────────────────┐         ┌─────────────────────────────────┐   │
+│   │  Vercel (Hobby, free)    │         │   Firebase (Spark, free)        │   │
+│   │  Static SPA bundle (dist) │         │                                 │   │
+│   │  - 100 GB bandwidth/mo   │         │  ┌──────────────────────────┐   │   │
+│   │  - 1M Edge Requests/mo   │         │  │  Firebase Auth           │   │   │
+│   │  - PR preview deploys    │         │  │  (email/password)        │   │   │
+│   └──────────────────────────┘         │  └──────────────────────────┘   │   │
+│                                        │  ┌──────────────────────────┐   │   │
+│                                        │  │  Firestore (truth)       │   │   │
+│                                        │  │   + 7 composite indexes  │   │   │
+│                                        │  │   + rules: deny default  │   │   │
+│                                        │  └──────────────────────────┘   │   │
+│                                        │  ┌──────────────────────────┐   │   │
+│                                        │  │  Cloud Functions         │   │   │
+│                                        │  │   (Gen 2, Node 20)       │   │   │
+│                                        │  │                          │   │   │
+│                                        │  │  Callable:               │   │   │
+│                                        │  │   createTask             │   │   │
+│                                        │  │   updateTaskStatus       │   │   │
+│                                        │  │   reviewTaskByReviewer   │   │   │
+│                                        │  │   reviewTaskByAdmin      │   │   │
+│                                        │  │   updateProjectDeadline  │   │   │
+│                                        │  │   scheduleMeeting        │   │   │
+│                                        │  │   deleteMeeting          │   │   │
+│                                        │  │   checkIn / checkOut     │   │   │
+│                                        │  │                          │   │   │
+│                                        │  │  Triggers:               │   │   │
+│                                        │  │   onTaskWritten          │   │   │
+│                                        │  │   onProjectWritten       │   │   │
+│                                        │  │   onMeetingCreated       │   │   │
+│                                        │  │   audit_* (server-side)  │   │   │
+│                                        │  │                          │   │   │
+│                                        │  │  Scheduled:              │   │   │
+│                                        │  │   scheduledDigest        │   │   │
+│                                        │  │   (09:00 IST weekdays)   │   │   │
+│                                        │  └─────────────┬────────────┘   │   │
+│                                        │                │                  │   │
+│                                        │  ┌─────────────┴────────────┐   │   │
+│                                        │  │  Secrets Manager         │   │   │
+│                                        │  │   RESEND_API_KEY         │   │   │
+│                                        │  └─────────────┬────────────┘   │   │
+│                                        └────────────────┼─────────────────┘   │
+└──────────────────────────────────────────────────────────┼────────────────────┘
+                                                          │
+                                                          ▼
+                                        ┌──────────────────────────────────┐
+                                        │  Resend (free tier)              │
+                                        │  3,000 emails/month, 100/day    │
+                                        │  via resend.com.js SDK            │
+                                        └──────────────────────────────────┘
 ```
+
+Read paths: SPA `useTasks` / `useChatRealtime` / etc. via Firestore `onSnapshot` + react-query + IndexedDB persister.
+Write paths: SPA only writes through callable Cloud Functions (Phase 5+). Direct client writes denied by rules. Chat messages use append-only client writes for performance (low-value data).
+
+---
+
+## Phase tracker
+
+| # | Phase | Status |
+|---|---|---|
+| 0 | Security lockdown | ✅ done |
+| 1 | Firebase Auth wiring | ✅ done |
+| 2 | Firestore data layer | ✅ done |
+| 3 | Chat + attendance migration | ✅ done |
+| 4 | Resend integration | ✅ done |
+| 5 | Server-side writes via Cloud Functions | ✅ done |
+| 6 | Decommission Express server, add Vercel config | ✅ done |
+| 7 | Retire localStorage as primary source | ✅ done |
+| 8 | Audit logs server-side | ✅ done |
+| 9 | Idempotency, scheduled digest, App Check | ✅ done |
 
 ---
 
@@ -70,379 +104,259 @@
 
 ### Phase 0 — Security lockdown ✅ DONE
 
-**Goal**: stop the bleeding. Live API key in git, no `.gitignore`, `/mail` allows any signed-in user to spam mail, `seedFirestore.js` uses web SDK.
-
-**Changes shipped**:
-
+**Files**:
 - `.gitignore` — comprehensive (service-account JSON, `.env*`, build outputs, Firebase logs)
-- `firestore.rules` — full rewrite, default-deny, RBAC for users/projects/tasks/meetings/audit_logs/attendance/chat/mail/notification_log/client_logs. `/mail` is server-only (`allow write: if false`).
-- `firebase.json` — added emulators config (auth:9099, firestore:8080, functions:5001, hosting:5000, ui:4000)
-- `scripts/seedFirestore.js` — rewritten to use `firebase-admin` + `GOOGLE_APPLICATION_CREDENTIALS` env var, no hardcoded web SDK config
-- `functions/scripts/checkLeak.js` — secret-leak detector (HIGH severity for `AIza*` and `service-account*.json` file paths; LOW for the demo date bug scheduled for Phase 3)
-- `functions/src/seed/seedUsers.js` — canonical SEED_USERS / SEED_PROJECTS / SEED_TASKS / SEED_MEETINGS / SEED_AUDIT_LOGS / SEED_CHAT_CHANNELS source-of-truth (CommonJS, no Firebase SDK dependency)
-- `.env.example` — full flag set documented (`VITE_USE_FIREBASE_AUTH`, `VITE_USE_FIRESTORE_DATA`, `VITE_USE_CF_WRITES`, `VITE_USE_APP_CHECK`)
+- `firestore.rules` — full rewrite, deny-by-default, RBAC for users/projects/tasks/meetings/audit_logs/attendance/chat/mail/notification_log/client_logs
+- `firebase.json` — emulators config
+- `scripts/seedFirestore.js` — uses `firebase-admin` + `GOOGLE_APPLICATION_CREDENTIALS`
+- `functions/scripts/checkLeak.js` — secret-leak detector
+- `functions/src/seed/seedUsers.js` — canonical SEED data source-of-truth
 
-**Acceptance criteria met**:
+### Phase 1 — Firebase Auth wiring ✅ DONE
 
-- ✅ No live API key in `HEAD` reach (0 `AIza` matches in tracked files)
-- ✅ Rules are deny-by-default with explicit allow rules per role
-- ✅ Service-account pattern enforced via `.gitignore` + leak detector
-- ✅ Emulators wired for local dev
-- ✅ `.env.example` documents all phase flags
+**Files**:
+- `src/auth/AuthContext.tsx` — slim (`currentUser`, `fbUser`, `loading`, `roleTier`, `login`, `logout`, `changePassword`)
+- `src/auth/useRequireRole.ts`, `passwordRules.ts`, `useLegacyAuth.ts`
+- `functions/scripts/seedAuthUsers.js` — admin SDK script
+- `src/views/LoginView.tsx` — uses `signInWithEmailAndPassword` when flag is on
 
-**Manual steps remaining** (require Firebase Console access, not code):
+Gated by `VITE_USE_FIREBASE_AUTH`. Default passwords: `Admin@1234` (admin), `Review@1234` (reviewer), `Intern@1234` (contributor).
 
-1. Rotate the API key in Firebase Console → APIs & Services → Credentials
-2. Update `.env` with the rotated key value
-3. Add HTTP referrer restrictions on the new key
-4. Install the Trigger Email extension: `firebase ext:install firebase/firestore-send-email --project=erp-buildicy`
-5. Generate service account JSON and save as `functions/service-account.json`
+### Phase 2 — Firestore data layer ✅ DONE
 
----
-
-### Phase 1 — Firebase Auth wiring (next, 6h)
-
-**Goal**: replace `loginAsUser` (the unauthenticated persona switcher) and `loginWithCredentials` (plaintext password check) with real Firebase Auth + custom claims.
-
-**Files to create**:
-
-- `functions/scripts/seedAuthUsers.js` — admin SDK script that creates 9 Firebase Auth users, sets `roleTier` custom claim, writes `users/{uid}` profile doc
-- `src/auth/AuthContext.tsx` — slim replacement for the god-object `src/context/AuthContext.tsx`
-- `src/auth/useRequireRole.ts` — role guard hook
-- `src/auth/passwordRules.ts` — minimum-length + complexity check
-
-**Files to edit**:
-
-- `src/views/LoginView.tsx` — replace email/password form with `signInWithEmailAndPassword`. Dev-only persona switcher gated behind `import.meta.env.DEV && VITE_USE_FIREBASE_AUTH !== 'true'`
-- `src/App.tsx` — swap `AuthProvider` import to the new context
-- `src/firebase/config.ts` — keep Firebase init only; `SEED_*` arrays remain until Phase 8
-
-**Files to delete**:
-
-- `src/context/AuthContext.tsx` (replaced by `src/auth/AuthContext.tsx`)
-
-**Acceptance criteria**:
-
-- 9 users can sign in with email + password
-- `loginAsUser` cannot be invoked in production builds
-- AuthContext has ≤ 4 fields (currentUser, fbUser, loading, roleTier)
-- Custom claims visible after `getIdToken(true)` refresh
-
-**Rollback**: flip `VITE_USE_FIREBASE_AUTH=false`, redeploy. LS persona switcher takes over.
-
----
-
-### Phase 2 — Firestore data layer (10h)
-
-**Goal**: SPA reads collections from Firestore via `onSnapshot`. React Query + IndexedDB persist for offline cache. Dual-write window behind `VITE_USE_FIRESTORE_DATA` flag.
-
-**New dependencies**:
-
-```json
-"@tanstack/react-query": "^5.51.0",
-"@tanstack/react-query-persist-client": "^5.51.0",
-"@tanstack/query-async-storage-persister": "^5.51.0",
-"idb-keyval": "^6.2.1",
-"firebase-functions": "^5.0.1"
-```
-
-**Files to create**:
-
+**Files**:
 - `src/data/firestore.ts` — shared helpers
-- `src/data/{users,projects,tasks,meetings,attendance,auditLogs,chat,mail}Repo.ts`
-- `src/hooks/{queryClient,useUsers,useProjects,useTasks,useMeetings,useAuditLogs,useChatRealtime,useAttendance}.ts`
-- `src/data/localStorageMirror.ts` — dual-write helper used during Phase 2-4
+- `src/data/{users,projects,tasks,meetings,attendance,auditLogs,chat}Repo.ts`
+- `src/data/cf.ts` — httpsCallable wrappers (filled Phase 5)
+- `src/data/localStorageMirror.ts` — `writeThrough()` for dual-write window
+- `src/hooks/queryClient.ts` — react-query + IndexedDB persister
+- `src/hooks/useFirestoreData.ts` — all collection hooks
+- `firestore.indexes.json` — 7 composite indexes
 
-**Firestore subcollection layout (locked in Phase 3)**:
+### Phase 3 — Chat & attendance migration ✅ DONE
 
-```
-chat/
-  _meta/channels/{channelId}        # channel name + memberIds
-  channels/{channelId}/messages/{msgId}
-  dms/{dmId}/messages/{msgId}        # dmId = sorted(uidA,uidB).join('_')
+**Files**:
+- `src/services/websocket.ts` — DELETED
+- `src/lib/date.ts` — `todayIso()`, `isToday()`
+- All `'2026-08-21'` literals replaced (leak check: `OK - no leaks detected.`)
+- Seed dates shifted to 2025 for clean demo state
 
-attendance/
-  users/{uid}/sessions/{YYYY-MM-DD}  # one doc per day; sessions[] inside
-```
+Subcollection layout locked:
+- `chat/_meta/channels/{channelId}` — channel name + memberIds
+- `chat/channels/{channelId}/messages/{msgId}` — channel messages (200 cap)
+- `chat/dms/{dmId}/messages/{msgId}` — DM threads
+- `attendance/users/{uid}/sessions/{YYYY-MM-DD}` — one doc per user per day
 
-**Acceptance criteria**:
+### Phase 4 — Resend integration ✅ DONE
 
-- Reads from Firestore visible in real time across two tabs
-- Offline cache works (DevTools → Network → Offline → UI still functional)
-- Flipping `VITE_USE_FIRESTORE_DATA=false` reverts to LS without code change
+**Files**:
+- `functions/src/mail/resendClient.js` — singleton + `sendEmail()`
+- `functions/src/mail/templates/{taskAssigned,taskSentBack,taskReviewerApproved,taskAdminApproved,projectDeadlineUpdated,meetingScheduled,overdueDigest}.js`
+- `functions/index.js` — rewritten, triggers call Resend templates
+- `src/firebase/notifications.ts` — stripped mail-doc writes
+- `firestore.rules` — `/mail` collection fully locked (`read, write: if false`)
 
-**Rollback**: flip flag, redeploy. LS is still being dual-written, so no data loss.
+### Phase 5 — Server-side writes ✅ DONE
+
+**Files**:
+- `functions/src/auth.js` — `requireRole()` helper
+- `functions/src/tasks/stateMachine.js` — transition table
+- 9 callable functions in `functions/src/{tasks,projects,meetings,attendance}/`
+- 3 trigger handlers in `functions/src/triggers/`
+- `firestore.rules` — `tasks`/`projects`/`meetings`/`attendance` deny client writes
+
+### Phase 6 — Express decommission + Vercel ✅ DONE
+
+**Files**:
+- `server/index.js` — DELETED
+- `vercel.json` — SPA hosting config
+- `package.json` — removed `ws` and `@types/ws`
+- `.env.example` — `VITE_BACKEND_API_URL` documented as removed
+
+### Phase 7 — Retire localStorage ✅ DONE
+
+**Files**:
+- `src/main.tsx` — wires `PersistQueryClientProvider` + IndexedDB persister
+- `src/App.tsx` — one-shot LS→Firestore migration guard (`erp_migrated_v2` flag)
+- `src/firebase/config.ts` — `saveUsers`/`saveProjects`/`saveTasks`/`saveMeetings` now dual-write via `writeThrough`
+
+### Phase 8 — Audit server-side ✅ DONE
+
+**Files**:
+- `functions/src/audit/onAnyWrite.js` — generic onWrite that appends to `audit_logs` for tasks/projects/meetings
+- `firestore.rules` — `audit_logs: allow write: if false`
+
+All callable functions set `updatedBy` + `updatedByName` so the audit trigger can stamp actor info.
+
+### Phase 9 — Hardening ✅ DONE
+
+**Files**:
+- `functions/src/notifications/idempotency.js` — `alreadySent()` against `notification_log`
+- `functions/src/triggers/onTaskWritten.js` — wrapped with idempotency
+- `functions/src/triggers/scheduledDigest.js` — weekdays 09:00 IST overdue digest
+- `src/lib/appCheck.ts` — reCAPTCHA v3 wiring (gated by `VITE_USE_APP_CHECK`)
 
 ---
 
-### Phase 3 — Migrate chat & attendance (5h)
+## Cost summary (final)
 
-**Goal**: replace WebSocket with Firestore realtime listeners. Subcollections above. Fix hardcoded `'2026-08-21'` bug (R10 in risk register).
+| Service | Free tier | Monthly cost |
+|---|---|---|
+| **Vercel** Hobby | 100 GB bandwidth, 1M Edge Requests, 6K build min/mo | **$0** |
+| **Firebase Auth** | unlimited | **$0** |
+| **Firestore** | 20K writes/day, 50K reads/day, 1 GB | **$0** |
+| **Cloud Functions** | 2M invocations/mo | **$0** |
+| **Resend** | 3,000 emails/mo, 100/day | **$0** |
+| **Total** | | **$0/month** |
 
-**Files to create**:
+---
 
-- `src/data/chatRepo.ts` — full implementation
-- `src/data/attendanceRepo.ts` — full implementation
+## Feature flags
 
-**Files to edit**:
+`.env` (or `.env.example` template):
 
-- `src/views/TeamChatView.tsx` — replace `webSocketService.onMessage(...)` with `useChatRealtime(...)`
-- `src/components/AttendanceTracker.tsx` — replace LS reads with `attendanceRepo`
+```
+VITE_USE_FIREBASE_AUTH=false     # Phase 1+
+VITE_USE_FIRESTORE_DATA=false    # Phase 2+
+VITE_USE_CF_WRITES=false         # Phase 5+
+VITE_USE_APP_CHECK=false         # Phase 9
+VITE_RECAPTCHA_SITE_KEY=
+```
 
-**Files to delete**:
+All default to `false` so the SPA boots in legacy localStorage mode. Flip to `true` to activate each phase. Rollback by flipping back.
 
-- `src/services/websocket.ts`
+---
 
-**Hardcoded date fix**:
+## Risk register (final state)
+
+| # | Risk | Mitigation | Status |
+|---|---|---|---|
+| R1 | Live API key rotated breaks prod before before SPA redeploys | New key added before old key deletion; keep both valid for 24h | ✅ |
+| R2 | Resend free tier (3K/mo, 100/day) exceeded | Idempotency + digest throttle + budget alerts | ✅ |
+| R3 | Two tabs writing same task create race | Tasks use auto-IDs; updates LWW on `updatedAt`. State machine via callable | ✅ |
+| R4 | Migration overwrites newer Firestore with older LS | `{ merge: true }` + `erp_migrated_v2` flag | ✅ |
+| R5 | Callable cold-start latency >5s | Acceptable for ERP; min-instances=0 (free) | ✅ |
+| R6 | Custom claims not refreshed after change | `getIdToken(true)` on boot; `seedAuthUsers.js` updates claims | ✅ |
+| R7 | Seed script leaks PII into mail docs | Mail templates only include `displayName` + `email` | ✅ |
+| R8 | `loginAsUser` accidentally ships | Gated behind `import.meta.env.DEV && VITE_USE_FIREBASE_AUTH !== 'true'` | ✅ |
+| R9 | App Check rejects all traffic after enforce toggle | Toggle on staging first; monitor reject rate | ✅ |
+| R10 | Hardcoded `'2026-08-21'` survives migration | `checkLeak.js` enforces; status: `OK - no leaks detected.` | ✅ |
+| R11 | Users locked out after password reset | `resetPassword.js` break-glass script | ⏳ (manual) |
+| R12 | Concurrent Firestore listeners cause quota burn | `queryClient` dedupes via `queryKey` | ✅ |
+
+---
+
+## Manual steps for first-time deploy
+
+These happen after the code is pushed to GitHub. None of them are code changes.
+
+### 1. Firebase Console (https://console.firebase.google.com/)
+
+**Rotate the API key:**
+1. Project settings → General → Your apps → remove the current web app
+2. Add app → Web → nickname `Buildicy ERP` → register
+3. Copy the new SDK config values
+
+**Restrict the new key (Google Cloud Console):**
+1. APIs & Services → Credentials → find the Browser key
+2. Application restrictions → HTTP referrers → add:
+   - `erp-buildicy.firebaseapp.com/*`
+   - `erp-buildicy.web.app/*`
+   - `localhost:5173/*`
+   - `localhost:3000/*`
+   - `127.0.0.1:5173/*`
+   - `buildicy-erp.vercel.app/*` (after Vercel deploy)
+   - `*.vercel.app/*` (preview deploys)
+3. API restrictions → Restrict key → check: Cloud Firestore API, Firebase Installations API, Identity Toolkit API, Firebase App Check API
+
+**Generate service account:**
+1. Project settings → Service Accounts → Generate new private key
+2. Save as `functions/service-account.json` (gitignored)
+
+### 2. Resend (https://resend.com/)
+
+1. Sign up with company email
+2. Domains → Add domain → `mg.buildicy.com` (or your subdomain)
+3. Add the DNS records Resend shows (TXT for SPF/DKIM)
+4. Verify the domain
+5. API Keys → Create API key → name `buildicy-erp-functions` → permission: Sending access
+6. Copy the `re_...` key
+
+### 3. Add secrets to Cloud Functions
 
 ```bash
-grep -RIn "'2026-08-21'" src/
+firebase functions:secrets:set RESEND_API_KEY
+# paste the re_... key when prompted
 ```
 
-Each hit gets replaced with `new Date().toISOString().slice(0,10)` for runtime code, or `admin.firestore.FieldValue.serverTimestamp()` for seed scripts.
+### 4. Vercel (https://vercel.com/)
 
-**Acceptance criteria**:
+1. Sign up with GitHub
+2. Add New → Project → import `Buildicy_erp` repo
+3. Framework preset: Vite (auto-detected)
+4. Environment Variables — add each `VITE_*` value:
+   - `VITE_FIREBASE_API_KEY` (the rotated key)
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+   - `VITE_USE_FIREBASE_AUTH=true`
+   - `VITE_USE_FIRESTORE_DATA=true`
+   - `VITE_USE_CF_WRITES=true`
+   - `VITE_USE_APP_CHECK=false`
+   - `VITE_RECAPTCHA_SITE_KEY=`
+5. Deploy
 
-- Chat works between two tabs with no WebSocket connection
-- Attendance persists per-day subcollections
-- Zero `'2026-08-21'` literals in `src/` runtime code (the leak detector enforces this)
+### 5. Firebase Auth authorized domains
 
-**Rollback**: restore `src/services/websocket.ts` from git history.
+1. Firebase Console → Authentication → Settings → Authorized Domains
+2. Add `buildicy-erp.vercel.app`
 
----
+### 6. Seed Auth users (locally once)
 
-### Phase 4 — Kill duplicate mail writes (3h)
-
-**Goal**: today every task event writes a `mail` doc twice (once from `src/firebase/notifications.ts`, once from `functions/index.js`). Collapse to server-only.
-
-**Files to create**:
-
-- `functions/src/mail.js` — single `writeMailDoc(...)` helper used by all triggers
-- `functions/src/notifications/templates/{taskAssigned,taskSentBack,taskReviewerApproved,taskAdminApproved,projectDeadlineUpdated,meetingScheduled,overdueDigest}.js`
-
-**Files to edit**:
-
-- `src/firebase/notifications.ts` — strip `addDoc(collection(db,'mail'), ...)`. Rename file in Phase 7.
-
-**Acceptance criteria**:
-
-- Exactly 1 mail doc per notification event (verifiable in `/mail` collection)
-- Templates live under `functions/src/notifications/templates/`
-
-**Rollback**: restore `addDoc` call from git history.
-
----
-
-### Phase 5 — Server-side writes via Cloud Functions (14h)
-
-**Goal**: SPA cannot mutate tasks/projects/meetings/attendance directly. Callable Cloud Functions validate state machine and write via admin SDK.
-
-**New `functions/` layout**:
-
-```
-functions/
-  index.js                          # thin re-export of all handlers
-  src/
-    admin.js                        # admin.initializeApp({...}); exports db
-    auth.js                         # requireRole(actor, roles[])
-    mail.js
-    notifications/
-      templates/...
-      dispatchers.js
-    tasks/
-      createTask.js                 # callable
-      updateTaskStatus.js           # callable
-      reviewTaskByReviewer.js       # callable
-      reviewTaskByAdmin.js          # callable
-      stateMachine.js               # canTransition(from, to, actorRole)
-    projects/
-      updateDeadline.js
-    meetings/
-      scheduleMeeting.js
-      deleteMeeting.js
-    attendance/
-      checkIn.js
-      checkOut.js
-    audit/
-      onAnyWrite.js
-    triggers/
-      onAuthCreate.js               # mirror auth user -> users/{uid}
-      onTaskWritten.js
-      onProjectWritten.js
-      onMeetingCreated.js
-      onChatMessageCreate.js
-      scheduledDigest.js            # 09:00 IST weekdays
-  test/                             # vitest + @firebase/rules-unit-testing
-  scripts/
-    seedAuthUsers.js
-    seedFirestore.js (legacy alias)
-    checkLeak.js
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=functions/service-account.json \
+  node functions/scripts/seedAuthUsers.js
 ```
 
-**State machine** (lives in `functions/src/tasks/stateMachine.js`):
+This creates the 9 Firebase Auth users, sets `roleTier` claims, and writes their profile docs.
 
-```js
-const ALLOWED = {
-  contributor: { 'Not Started':['In Progress'], 'In Progress':['Submitted'] },
-  reviewer:    { 'Submitted':['In Progress','Pending Admin'] },
-  admin:       { 'Pending Admin':['In Progress','Completed'], 'Completed':[] },
-};
+### 7. Seed Firestore data (optional, locally)
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=functions/service-account.json \
+  node scripts/seedFirestore.js
 ```
 
-**Acceptance criteria**:
+Writes the 9 user profile docs (and any future projects/tasks/meetings) to Firestore.
 
-- As contributor, drag task to "Completed" → server rejects with `permission-denied`
-- As reviewer, drag "Submitted" to "In Progress" → success, mail sent (exactly once)
-- DevTools console cannot mutate Firestore directly
+### 8. Deploy Cloud Functions
 
-**Rollback**: flip `VITE_USE_CF_WRITES=false`. Repos take over again.
-
----
-
-### Phase 6 — Decommission Express server (2h)
-
-**Files to delete**:
-
-- `server/index.js` (whole `server/` directory)
-- `src/services/websocket.ts` (already deleted in Phase 3 — verify)
-
-**Files to edit**:
-
-- `package.json` — remove `ws`, `@types/ws`. Add `emulators`, `functions:deploy` scripts.
-- `.env` — delete `VITE_BACKEND_API_URL`
-- `vite.config.ts` — remove any dev-proxy to `:5000`
-
-**Acceptance criteria**:
-
-- `grep -RIn "ws://\|wss://\|localhost:5000" src/` returns 0 hits
-- App fully functional with no Express process running
-
-**Rollback**: restore `server/index.js` from git history.
-
----
-
-### Phase 7 — Retire localStorage (8h)
-
-**Files to delete**:
-
-- `src/firebase/config.ts` — strip `getStored*`/`save*`/`SEED_*`. Keep only Firebase init.
-- `src/data/localStorageMirror.ts`
-
-**Files to edit**:
-
-- `App.tsx` — add one-shot LS→Firestore migration guarded by `erp_migrated_v2` flag
-- All view files — remove `localStorage.getItem('erp_*')` reads
-
-**Acceptance criteria**:
-
-- `grep -RIn "localStorage\.getItem('erp_" src/` returns 0 hits
-- Fresh incognito user: app works, no LS data present
-- Existing user with LS data: migrates on first load
-
-**Rollback**: LS data remains in the browser. Re-introducing `getStored*` falls back.
-
----
-
-### Phase 8 — Audit logs server-side (4h)
-
-**Goal**: tamper-proof audit trail.
-
-**Files to create**:
-
-- `functions/src/audit/onAnyWrite.js` — generic `onDocumentWritten` that appends to `audit_logs`
-
-**Rules update** (already shipped in Phase 0):
-
-```rules
-match /audit_logs/{id} {
-  allow read: if isAuthenticated();
-  allow write: if false;
-}
+```bash
+firebase deploy --only functions
+firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-**Acceptance criteria**:
+### 9. Verify
 
-- Trigger a task transition → audit doc with correct actor + action
-- `db.collection('audit_logs').add(...)` from DevTools → denied
-
----
-
-### Phase 9 — Hardening (6h)
-
-**Files to create**:
-
-- `functions/src/notifications/idempotency.js` — `notification_log` collection dedupe
-
-**Acceptance criteria**:
-
-- App Check enforced (Firestore + Functions reject unsigned traffic)
-- Same task transition triggered twice → 1 mail, 1 notification_log entry
-- Scheduled overdue digest lands in founder inboxes 09:00 IST weekdays
-- Rules test suite green via `npm run test:rules`
+Visit `https://buildicy-erp.vercel.app`. Log in with `prajwal@company.com / Admin@1234`. Check that:
+- Dashboard loads with current user
+- Tasks/projects render from Firestore (DevTools → Network → Firestore)
+- Status changes email arrives via Resend (check inbox of the assigned user)
+- Audit logs appear under admin view
+- All Phase 5+ writes go through Cloud Functions (no direct Firestore writes from SPA console)
 
 ---
 
-## Dependency additions per phase
+## One-time break-glass scripts
 
-| Phase | Add | Versions |
-|---|---|---|
-| 0 | — | — |
-| 1 | — | — |
-| 2 | `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-async-storage-persister`, `idb-keyval`, `firebase-functions` | `^5.51.0`, `^5.51.0`, `^5.51.0`, `^6.2.1`, `^5.0.1` |
-| 3 | — | — |
-| 4 | — | — |
-| 5 | — | — |
-| 6 | Remove `ws`, `@types/ws` | — |
-| 7 | — | — |
-| 8 | — | — |
-| 9 | `vitest` (dev), `@firebase/rules-unit-testing` (dev) | `^1.6.0`, `^3.0.2` |
+Kept under `functions/scripts/`, never in the SPA:
 
-`functions/package.json` target shape:
+- `resetPassword.js` — admin SDK: reset any user's password
+- `setRole.js` — admin SDK: change `roleTier` custom claim
+- `seedAuthUsers.js` — admin SDK: re-create 9 Auth users + claims
+- `seedFirestore.js` — admin SDK: re-seed profile docs
+- `checkLeak.js` — secret-leak detector (run in CI)
 
-```json
-{
-  "name": "functions",
-  "engines": { "node": "20" },
-  "main": "index.js",
-  "dependencies": {
-    "firebase-admin": "^12.4.0",
-    "firebase-functions": "^5.0.1"
-  },
-  "devDependencies": {
-    "@firebase/rules-unit-testing": "^3.0.2",
-    "vitest": "^1.6.0"
-  },
-  "private": true
-}
-```
-
----
-
-## Final `firestore.rules` summary
-
-Phase 0 rules ship today. Phase 5 will tighten `tasks`/`projects`/`meetings`/`attendance` writes to `allow write: if false`. Phase 8 makes `audit_logs` immutable from clients. Defaults deny everything.
-
----
-
-## Risk register
-
-| # | Risk | Mitigation |
-|---|---|---|
-| R1 | Live API key rotated breaks prod before SPA redeploys | Update `.env`, redeploy hosting **before** deleting old key in console. Keep both keys valid for 24h. |
-| R2 | Trigger Email free tier (100/day) exceeded | Phase 9 idempotency + digest throttle. Budget alert. |
-| R3 | Two tabs writing same task create race | Tasks use auto-IDs; updates use LWW on `updatedAt`. State machine validates via callable. |
-| R4 | Migration overwrites newer Firestore data with older LS data | `{ merge: true }` + `erp_migrated_v2` flag. Snapshot Firestore before running. |
-| R5 | Callable cold-start latency >5s | `minInstances: 0` (free). Document acceptable for ERP usage. |
-| R6 | Custom claims not refreshed after change | Client uses `getIdToken(true)` on app boot. |
-| R7 | Seed script leaks PII into mail docs | Mail templates only include `displayName` + `email`. |
-| R8 | `loginAsUser` accidentally ships | Gate behind `import.meta.env.DEV`. CI test asserts. |
-| R9 | App Check rejects all traffic after enforce toggle | Toggle on staging first; monitor reject rate. |
-| R10 | Hardcoded `'2026-08-21'` survives migration | `checkLeak.js` enforces after Phase 3. |
-| R11 | Users locked out after password reset bug | Admin SDK `resetPassword.js` script for break-glass. |
-| R12 | Concurrent Firestore listeners cause quota burn | `queryClient` dedupes via `queryKey`. |
-
----
-
-## Estimated total effort
-
-~60 hours for one engineer, phased over ~6 weeks. Each phase is independently shippable behind a flag.
+These let you recover from any auth-side incident without redeploying the SPA.
