@@ -441,3 +441,44 @@ export const sendBirthdayWishEmail = async (user: User): Promise<void> => {
   });
 };
 
+export const sendWelcomeMessageToAll = async (
+  users: User[],
+  sender: User
+): Promise<{ count: number }> => {
+  let count = 0;
+  for (const user of users) {
+    if (!user.email || !user.email.includes('@')) continue;
+
+    const html = buildEmailTemplate(
+      'Welcome to Buildicy ERP! 🚀',
+      'Team Welcome Announcement',
+      `
+        <p>Dear <strong>${user.fullName}</strong>,</p>
+        <p>We are delighted to welcome you to the <strong>Buildicy Enterprise ERP Workspace</strong>! 🎉</p>
+        <p>Your portal is fully configured for real-time task management, project execution, team chat compliance, and HR analytics.</p>
+        <div class="detail-box">
+          <div class="detail-item"><span class="label">👤 Member Name:</span> ${user.fullName}</div>
+          <div class="detail-item"><span class="label">💼 Job Title:</span> ${user.title || 'Team Member'}</div>
+          <div class="detail-item"><span class="label">🛡️ Role Access:</span> ${user.roleTier.toUpperCase()}</div>
+          <div class="detail-item"><span class="label">📧 Registered Email:</span> ${user.email}</div>
+          <div class="detail-item"><span class="label">📣 Dispatched By:</span> ${sender.fullName} (${sender.roleTier.toUpperCase()})</div>
+        </div>
+        <p>Log in anytime to view your assigned projects, collaborate with team members, and check daily shift boards.</p>
+        <a href="https://meet.google.com/sbd-ccfe-hnz" class="btn">Join Team Meeting Hub</a>
+      `
+    );
+
+    logNotification({
+      id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      to: [user.email],
+      subject: `[Buildicy ERP] 🚀 Special Welcome to Buildicy Workspace, ${user.fullName}!`,
+      bodyText: `Dear ${user.fullName}, Welcome to Buildicy Enterprise ERP! Log in to view your assigned workspace.`,
+      htmlText: html,
+      triggerEvent: 'WELCOME_MESSAGE',
+      createdAt: new Date().toISOString(),
+    });
+    count++;
+  }
+  return { count };
+};
+

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { OrgTreeViewer } from '@/components/admin/OrgTreeViewer';
+import { sendWelcomeMessageToAll } from '@/firebase/notifications';
 import { 
   Cake, 
   Gift, 
@@ -30,15 +31,36 @@ import {
   Clock,
   Key,
   GitBranch,
-  Table as TableIcon
+  Table as TableIcon,
+  Mail
 } from 'lucide-react';
 
 export const HRHubView: React.FC = () => {
-  const { currentUser, users, projects, tasks, attendanceRecords, addUser, updateUser, toggleUserActive, sendChatMessage } = useAuth();
+  const { currentUser, users, projects, tasks, attendanceRecords, addUser, updateUser, toggleUserActive, sendChatMessage, addAuditLog } = useAuth();
   
   const [wishSuccessMsg, setWishSuccessMsg] = useState<string>('');
   const [birthdayFilter, setBirthdayFilter] = useState<'today' | 'this_month' | 'next_month' | 'all'>('today');
   const [viewMode, setViewMode] = useState<'directory' | 'org-tree'>('directory');
+  const [isSendingWelcome, setIsSendingWelcome] = useState<boolean>(false);
+
+  const handleSendWelcomeMessages = async () => {
+    if (isSendingWelcome || !currentUser) return;
+    setIsSendingWelcome(true);
+    try {
+      const res = await sendWelcomeMessageToAll(users, currentUser);
+      addAuditLog(
+        'WELCOME_EMAILS_SENT',
+        `Personnel Directory (${res.count} members)`,
+        `Special welcome email dispatched to all ${res.count} team members via Resend Mail Gateway by ${currentUser.fullName}.`
+      );
+      setWishSuccessMsg(`🚀 Special welcome message email dispatched to all ${res.count} team members via Resend!`);
+      setTimeout(() => setWishSuccessMsg(''), 6000);
+    } catch (err) {
+      console.error('Error sending welcome emails:', err);
+    } finally {
+      setIsSendingWelcome(false);
+    }
+  };
 
   // Add User Dialog State
   const [isAddUserOpen, setIsAddUserOpen] = useState<boolean>(false);
@@ -332,9 +354,22 @@ export const HRHubView: React.FC = () => {
           </div>
 
           {isAdmin && (
-            <Button size="sm" onClick={handleOpenAddUser} className="text-xs h-9 px-4 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0">
-              <Plus className="w-4 h-4 mr-1.5" /> Onboard Member
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSendWelcomeMessages}
+                disabled={isSendingWelcome}
+                className="text-xs h-9 px-3.5 font-bold border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-xl shadow-2xs shrink-0 gap-1.5"
+                title="Dispatch special welcome message email to everyone via Resend"
+              >
+                <Mail className="w-4 h-4 text-purple-600" />
+                {isSendingWelcome ? 'Sending Emails...' : 'Send Welcome Message'}
+              </Button>
+              <Button size="sm" onClick={handleOpenAddUser} className="text-xs h-9 px-4 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0">
+                <Plus className="w-4 h-4 mr-1.5" /> Onboard Member
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -350,91 +385,67 @@ export const HRHubView: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-purple-100 dark:border-slate-800 pb-3 gap-3">
           <div className="flex items-center space-x-2">
             <Gift className="w-4 h-4 text-purple-600" />
-            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Team Birthdays & Celebrations</span>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Team Birthdays & Celebrations</h3>
           </div>
 
-          {/* Interactive Filters Bar */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl space-x-1">
+          {/* Birthday Filter */}
+          <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
             <button
               onClick={() => setBirthdayFilter('today')}
-              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                birthdayFilter === 'today' 
-                  ? 'bg-purple-600 text-white shadow-2xs' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                birthdayFilter === 'today' ? 'bg-white dark:bg-slate-900 text-purple-950 dark:text-purple-300 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              Today's Birthdays
+              Today's Birthday ({users.filter(isTodayBirthday).length})
             </button>
             <button
               onClick={() => setBirthdayFilter('this_month')}
-              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                birthdayFilter === 'this_month' 
-                  ? 'bg-purple-600 text-white shadow-2xs' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                birthdayFilter === 'this_month' ? 'bg-white dark:bg-slate-900 text-purple-950 dark:text-purple-300 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              This Month (Aug)
-            </button>
-            <button
-              onClick={() => setBirthdayFilter('next_month')}
-              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                birthdayFilter === 'next_month' 
-                  ? 'bg-purple-600 text-white shadow-2xs' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              Next Month (Sep)
+              This Month
             </button>
             <button
               onClick={() => setBirthdayFilter('all')}
-              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                birthdayFilter === 'all' 
-                  ? 'bg-purple-600 text-white shadow-2xs' 
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                birthdayFilter === 'all' ? 'bg-white dark:bg-slate-900 text-purple-950 dark:text-purple-300 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              All Birthdays
+              All Members
             </button>
           </div>
         </div>
 
-        {/* Unified Responsive Birthday Roster Grid */}
         {birthdayUsers.length === 0 ? (
-          <div className="py-12 text-center space-y-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
-            <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-slate-800 text-purple-600 flex items-center justify-center mx-auto shadow-2xs">
-              <PartyPopper className="w-6 h-6" />
-            </div>
-            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              No team birthdays {birthdayFilter === 'today' ? 'today' : 'in this category'} 🎉
-            </p>
-            <p className="text-xs text-slate-500 font-normal">
-              Switch filters above to view upcoming birthdays in this month or next month.
-            </p>
-            <Button size="sm" onClick={() => setBirthdayFilter('this_month')} className="h-8 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl">
-              View This Month's Birthdays
-            </Button>
+          <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-xl text-center text-slate-500 text-xs font-medium border border-dashed border-slate-200 dark:border-slate-800">
+            No birthdays found matching the selected filter.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {birthdayUsers.map(user => {
-              const isBirthdayToday = isTodayBirthday(user);
+              const isToday = isTodayBirthday(user);
               return (
-                <div key={user.id} className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between shadow-2xs hover:border-purple-300 transition-colors">
-                  <div className="flex items-center space-x-3 truncate">
-                    <Avatar className="h-9 w-9 border border-purple-300 shrink-0">
+                <div key={user.id} className="p-3 bg-purple-50/50 dark:bg-slate-800/50 border border-purple-100 dark:border-slate-800 rounded-xl flex items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2.5">
+                    <Avatar className="h-8 w-8 border border-purple-200">
                       {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.fullName} /> : null}
-                      <AvatarFallback className="bg-purple-600 text-white text-xs font-bold">
+                      <AvatarFallback className="bg-purple-600 text-white font-bold text-[10px]">
                         {getInitials(user.fullName)}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="truncate">
-                      <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block leading-tight truncate">{user.fullName}</span>
-                      <span className="text-[10px] text-slate-500 font-normal block truncate">{user.title}</span>
-                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold block pt-0.5">🎂 {user.dob || 'Aug 21'}</span>
+                    <div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block leading-tight">{user.fullName}</span>
+                      <span className="text-[10px] text-purple-700 dark:text-purple-400 font-semibold block">🎂 {user.dob || 'Aug 21'}</span>
                     </div>
                   </div>
-                  {isBirthdayToday ? (
-                    <Button size="sm" onClick={() => handleSendWish(user)} className="text-xs h-8 px-3 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0 gap-1">
+
+                  {isToday ? (
+                    <Button 
+                      size="sm" 
+                      onClick={() => handleSendWish(user)} 
+                      className="text-xs h-8 px-3 font-bold bg-pink-600 hover:bg-pink-700 text-white rounded-xl shadow-2xs shrink-0 gap-1"
+                    >
                       <span>Wish</span> <Sparkles className="w-3.5 h-3.5" />
                     </Button>
                   ) : (
@@ -460,9 +471,24 @@ export const HRHubView: React.FC = () => {
                 <Users className="w-4 h-4 text-purple-600" />
                 <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-100">Personnel Directory & Member Records</CardTitle>
               </div>
-              <Badge variant="purple" className="text-[10px] font-extrabold">
-                {users.length} Team Members
-              </Badge>
+              <div className="flex items-center space-x-2">
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSendWelcomeMessages}
+                    disabled={isSendingWelcome}
+                    className="text-xs h-8 px-3 font-bold border-purple-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-xl gap-1.5"
+                    title="Dispatch special welcome message email to everyone via Resend"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-purple-600" />
+                    {isSendingWelcome ? 'Sending...' : 'Send Welcome Message'}
+                  </Button>
+                )}
+                <Badge variant="purple" className="text-[10px] font-extrabold">
+                  {users.length} Team Members
+                </Badge>
+              </div>
             </div>
           </CardHeader>
 
