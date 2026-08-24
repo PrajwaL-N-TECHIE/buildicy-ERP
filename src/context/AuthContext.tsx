@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   User,
   Project,
@@ -45,6 +45,13 @@ import {
   notifyProjectDeadlineChanged,
   notifyMeetingScheduled,
 } from '@/firebase/notifications';
+
+import { USE_FIRESTORE_DATA } from '@/data/firestore';
+import { usersRepo } from '@/data/usersRepo';
+import { projectsRepo } from '@/data/projectsRepo';
+import { tasksRepo } from '@/data/tasksRepo';
+import { meetingsRepo } from '@/data/meetingsRepo';
+import { auditLogsRepo } from '@/data/auditLogsRepo';
 
 const USE_FIREBASE_AUTH = import.meta.env.VITE_USE_FIREBASE_AUTH === 'true';
 
@@ -120,22 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     const local = localStorage.getItem('erp_chat_messages');
-    return local ? JSON.parse(local) : [
-      {
-        id: 'msg-1',
-        senderId: 'user-1',
-        channelId: '#general',
-        text: 'Welcome team! Let us deliver Sprint 4 deliverables on schedule.',
-        timestamp: new Date().toISOString(),
-      },
-      {
-        id: 'msg-2',
-        senderId: 'user-3',
-        channelId: '#general',
-        text: 'Reviewer first-pass checklist is active. Submit PR links for review.',
-        timestamp: new Date().toISOString(),
-      },
-    ];
+    return local ? JSON.parse(local) : [];
   });
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
     const local = localStorage.getItem('erp_attendance_records');
@@ -143,6 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentAuthEmail, setCurrentAuthEmail] = useState<string | null>(null);
   const [roleTier, setRoleTier] = useState<RoleTier | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
@@ -156,7 +149,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    refreshData();
+    if (USE_FIRESTORE_DATA) {
+      // Clear legacy localStorage cache keys so old mock data never leaks into the UI
+      localStorage.removeItem('erp_users');
+      localStorage.removeItem('erp_projects');
+      localStorage.removeItem('erp_tasks');
+      localStorage.removeItem('erp_meetings');
+      localStorage.removeItem('erp_notifications');
+      localStorage.removeItem('erp_audit_logs');
+      localStorage.removeItem('erp_chat_messages');
+      localStorage.removeItem('erp_attendance_records');
+      setAttendanceRecords([]);
+
+      const unsubUsers = usersRepo.watchAll((nextUsers) => {
+        setUsers(nextUsers);
+      });
+      const unsubProjects = projectsRepo.watchAll((nextProjects) => {
+        setProjects(nextProjects);
+      });
+      const unsubTasks = tasksRepo.watchAll((nextTasks) => {
+        setTasks(nextTasks);
+      });
+      const unsubMeetings = meetingsRepo.watchAll((nextMeetings) => {
+        setMeetings(nextMeetings);
+      });
+      const unsubLogs = auditLogsRepo.watchRecent((nextLogs) => {
+        setAuditLogs(nextLogs);
+      });
+
+      return () => {
+        unsubUsers();
+        unsubProjects();
+        unsubTasks();
+        unsubMeetings();
+        unsubLogs();
+      };
+    } else {
+      refreshData();
+    }
   }, []);
 
   // Auth subscription: real Firebase Auth in prod, LS persona in dev fallback.
@@ -176,16 +206,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubscribe = subscribeToAuthChanges(async (fbUser) => {
         if (!fbUser) {
           setCurrentUserId(null);
+          setCurrentAuthEmail(null);
           setRoleTier(null);
           setAuthLoading(false);
           return;
         }
+        setCurrentAuthEmail(fbUser.email || null);
         try {
           const { roleTier: rt, user } = await refreshTokenAndClaims();
           if (user) setCurrentUserId(user.id);
           setRoleTier(rt);
         } catch (err) {
-          console.error('Auth state refresh failed:', err);
+          console.warn('[AuthContext] Auth state refresh fallback:', err);
         } finally {
           setAuthLoading(false);
         }
@@ -196,7 +228,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const currentUser = users.find(u => u.id === currentUserId) || null;
+  const currentUser = useMemo(() => {
+    if (!currentUserId && !currentAuthEmail) return null;
+    return (
+      users.find(
+        (u) =>
+          u.id === currentUserId ||
+          (currentAuthEmail && u.email.toLowerCase() === currentAuthEmail.toLowerCase())
+      ) || null
+    );
+  }, [users, currentUserId, currentAuthEmail]);
 
   const loginAsUser = (userId: string) => {
     if (USE_FIREBASE_AUTH) {

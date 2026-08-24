@@ -17,7 +17,11 @@ export const meetingsRepo = {
   watchAll(cb: (meetings: Meeting[]) => void, extra: QueryConstraint[] = []) {
     return onSnapshot(
       query(collection(db, PATH), orderBy('scheduledAt', 'asc'), ...extra),
-      (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting)))
+      (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting))),
+      (err) => {
+        console.warn('[meetingsRepo] watchAll listener notice:', err.message);
+        cb([]);
+      }
     );
   },
   watchForUser(uid: string, cb: (meetings: Meeting[]) => void) {

@@ -14,16 +14,55 @@ export interface AuthSession {
   roleTier: RoleTier;
 }
 
+export function buildUserProfileFromAuth(fbUser: FirebaseUser, roleTier: RoleTier): User {
+  const email = fbUser.email || '';
+  const displayName = fbUser.displayName || email.split('@')[0] || 'User';
+  const parts = displayName.trim().split(' ');
+  const firstName = parts[0] || 'User';
+  const lastName = parts.slice(1).join(' ') || '';
+
+  return {
+    id: fbUser.uid,
+    firstName,
+    lastName,
+    fullName: displayName,
+    username: email.split('@')[0] || fbUser.uid,
+    email,
+    title: 'Team Member',
+    roleTier,
+    projectIds: [],
+    active: true,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+const getDocWithTimeout = async (docRef: Parameters<typeof getDoc>[0], timeoutMs = 1500) => {
+  return Promise.race([
+    getDoc(docRef),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore request timed out')), timeoutMs)
+    ),
+  ]);
+};
+
 export const signInWithCredentials = async (email: string, password: string): Promise<AuthSession> => {
   const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
   const tokenResult = await cred.user.getIdTokenResult(true);
   const roleTier = (tokenResult.claims.roleTier as RoleTier) || 'contributor';
 
-  const userDoc = await getDoc(doc(db, 'users', cred.user.uid));
-  if (!userDoc.exists()) {
-    throw new Error('User profile not found in Firestore.');
+  let user: User;
+  try {
+    const userDoc = await getDocWithTimeout(doc(db, 'users', cred.user.uid));
+    if (userDoc.exists()) {
+      user = { id: cred.user.uid, ...(userDoc.data() || {}) } as User;
+    } else {
+      user = buildUserProfileFromAuth(cred.user, roleTier);
+    }
+  } catch (err) {
+    console.warn('[Auth] Firestore fetch warning, constructed auth profile:', err);
+    user = buildUserProfileFromAuth(cred.user, roleTier);
   }
-  const user = { id: cred.user.uid, ...userDoc.data() } as User;
+
   return { fbUser: cred.user, user, roleTier };
 };
 
@@ -37,15 +76,22 @@ export const refreshTokenAndClaims = async (): Promise<{ roleTier: RoleTier; use
   const fbUser = auth.currentUser;
   if (!fbUser) return { roleTier: 'contributor', user: null };
 
-  // user.getIdTokenResult() returns a parsed token + claims; forceRefresh true to pick up claim changes.
   const tokenResult = await fbUser.getIdTokenResult(true);
-  // firebase v10 typings treat claims as a record but the inferred type can
-  // collapse to string under strict mode; cast through unknown to satisfy TS.
   const claims = tokenResult.claims as unknown as { roleTier?: RoleTier };
   const roleTier: RoleTier = claims.roleTier || 'contributor';
 
-  const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
-  const user = userDoc.exists() ? ({ id: fbUser.uid, ...userDoc.data() } as User) : null;
+  let user: User | null = null;
+  try {
+    const userDoc = await getDocWithTimeout(doc(db, 'users', fbUser.uid));
+    if (userDoc.exists()) {
+      user = { id: fbUser.uid, ...(userDoc.data() || {}) } as User;
+    } else {
+      user = buildUserProfileFromAuth(fbUser, roleTier);
+    }
+  } catch (err) {
+    console.warn('[Auth] Firestore profile read warning:', err);
+    user = buildUserProfileFromAuth(fbUser, roleTier);
+  }
 
   return { roleTier, user };
 };

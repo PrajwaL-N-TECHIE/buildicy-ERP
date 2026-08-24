@@ -15,14 +15,14 @@ import type { Task, TaskStatus } from '@/types';
 const PATH = 'tasks';
 
 export const tasksRepo = {
-  /**
-   * Live-watch all tasks. Pass extra `QueryConstraint`s (where/orderBy/limit)
-   * to narrow the subscription. RBAC enforces visibility server-side.
-   */
   watchAll(cb: (tasks: Task[]) => void, extra: QueryConstraint[] = []) {
     return onSnapshot(
       query(collection(db, PATH), orderBy('updatedAt', 'desc'), ...extra),
-      (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Task)))
+      (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Task))),
+      (err) => {
+        console.warn('[tasksRepo] watchAll listener notice:', err.message);
+        cb([]);
+      }
     );
   },
   watchMine(uid: string, cb: (tasks: Task[]) => void) {
