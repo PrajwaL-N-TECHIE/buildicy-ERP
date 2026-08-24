@@ -104,13 +104,17 @@ const MainContent: React.FC = () => {
   return <DashboardView />;
 };
 
+import { ToastProvider } from '@/context/ToastContext';
+
 export function App() {
   return (
-    <NewAuthProvider>
-      <LegacyAuthProvider>
-        <MainContent />
-      </LegacyAuthProvider>
-    </NewAuthProvider>
+    <ToastProvider>
+      <NewAuthProvider>
+        <LegacyAuthProvider>
+          <MainContent />
+        </LegacyAuthProvider>
+      </NewAuthProvider>
+    </ToastProvider>
   );
 }
 

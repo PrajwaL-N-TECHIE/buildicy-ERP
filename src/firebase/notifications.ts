@@ -62,18 +62,20 @@ function buildEmailTemplate(title: string, badgeText: string, contentHtml: strin
   `;
 }
 
-async function sendResendHttpEmail(notification: MailNotification): Promise<void> {
+async function sendResendHttpEmail(notification: MailNotification): Promise<{ success: boolean; data?: any; error?: string }> {
   const apiKey = import.meta.env.VITE_RESEND_API_KEY || (typeof process !== 'undefined' ? process.env.RESEND_API_KEY : '');
   if (!apiKey) {
     console.log('[Resend] Skipping direct HTTP email send — no VITE_RESEND_API_KEY found.');
-    return;
+    return { success: true, data: 'Logged to local notification log (no API key)' };
   }
 
   const validRecipients = notification.to.filter(email => email && email.includes('@'));
   if (validRecipients.length === 0) {
     console.warn('[Resend] No valid recipient emails found for notification:', notification.subject);
-    return;
+    return { success: false, error: 'No valid recipient email address.' };
   }
+
+  const fromEmail = import.meta.env.VITE_RESEND_FROM_EMAIL || 'Buildicy ERP <onboarding@resend.dev>';
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
@@ -83,7 +85,7 @@ async function sendResendHttpEmail(notification: MailNotification): Promise<void
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Buildicy ERP <notifications@erp.buildicy.com>',
+        from: fromEmail,
         to: validRecipients,
         subject: notification.subject,
         html: notification.htmlText || `<p>${notification.bodyText.replace(/\n/g, '<br/>')}</p>`,
@@ -92,22 +94,25 @@ async function sendResendHttpEmail(notification: MailNotification): Promise<void
     const result = await response.json();
     if (!response.ok) {
       console.warn('[Resend API Error Output]', result);
-    } else {
-      console.log('[Resend API Email Dispatched Successfully]', result);
+      return { success: false, error: result.message || 'Failed to dispatch email via Resend API.' };
     }
-  } catch (err) {
+    console.log('[Resend API Email Dispatched Successfully]', result);
+    return { success: true, data: result };
+  } catch (err: any) {
     console.error('[Resend API Dispatch Exception]', err);
+    return { success: false, error: err?.message || 'Network exception while connecting to Resend.' };
   }
 }
 
-function logNotification(notification: MailNotification): void {
+async function logNotification(notification: MailNotification): Promise<{ success: boolean; error?: string }> {
   try {
     const existing = getStoredNotifications();
     const updated = [notification, ...existing];
     saveNotifications(updated);
-    sendResendHttpEmail(notification);
-  } catch (err) {
+    return await sendResendHttpEmail(notification);
+  } catch (err: any) {
     console.error('Error logging notification:', err);
+    return { success: false, error: err?.message || 'Failed to log notification.' };
   }
 }
 
@@ -116,7 +121,7 @@ export const sendTaskAssignmentEmail = async (
   contributor: User,
   assigner: User,
   project: Project
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const assignerFormatted = formatUserRole(assigner);
   const contributorFormatted = formatUserRole(contributor);
 
@@ -138,7 +143,7 @@ export const sendTaskAssignmentEmail = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [contributor.email],
     subject: `[Buildicy ERP] New Task Assigned: ${project.name}`,
@@ -157,7 +162,7 @@ export const sendReviewStatusEmail = async (
   reviewer: User,
   decision: 'approved' | 'sent_back',
   remark: string
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const isApproved = decision === 'approved';
   const reviewerFormatted = formatUserRole(reviewer);
 
@@ -177,7 +182,7 @@ export const sendReviewStatusEmail = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [contributor.email],
     subject: `[Buildicy ERP] Task Review Update: ${isApproved ? 'Approved' : 'Sent Back'}`,
@@ -193,8 +198,8 @@ export const notifyTaskSentBack = async (
   contributor: User,
   actor: User,
   remark: string
-): Promise<void> => {
-  await sendReviewStatusEmail(task, contributor, actor, 'sent_back', remark);
+): Promise<{ success: boolean; error?: string }> => {
+  return await sendReviewStatusEmail(task, contributor, actor, 'sent_back', remark);
 };
 
 export const notifyTaskApprovedByReviewer = async (
@@ -203,8 +208,8 @@ export const notifyTaskApprovedByReviewer = async (
   reviewer: User,
   _admins?: User[],
   _project?: Project
-): Promise<void> => {
-  await sendReviewStatusEmail(task, contributor, reviewer, 'approved', 'Reviewer approved.');
+): Promise<{ success: boolean; error?: string }> => {
+  return await sendReviewStatusEmail(task, contributor, reviewer, 'approved', 'Reviewer approved.');
 };
 
 export const notifyTaskFinalApproved = async (
@@ -212,7 +217,7 @@ export const notifyTaskFinalApproved = async (
   contributor: User,
   admin: User,
   remark?: string
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const adminFormatted = formatUserRole(admin);
 
   const html = buildEmailTemplate(
@@ -230,7 +235,7 @@ export const notifyTaskFinalApproved = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [contributor.email],
     subject: `[Buildicy ERP] Final Sign-Off: Task Approved`,
@@ -247,7 +252,7 @@ export const notifyProjectDeadlineChanged = async (
   setBy: User,
   dueDate?: string,
   _note?: string
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const setByFormatted = formatUserRole(setBy);
   const newDate = dueDate || project.deadline?.dueDate || 'Not set';
 
@@ -266,7 +271,7 @@ export const notifyProjectDeadlineChanged = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: members.map((m) => m.email),
     subject: `[Buildicy ERP] Project Deadline Updated: ${project.name}`,
@@ -282,7 +287,7 @@ export const notifyMeetingScheduled = async (
   participants: User[],
   organizer: User,
   project?: Project | null
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const organizerFormatted = formatUserRole(organizer);
   const meetUrl = meeting.location || 'https://meet.google.com/sbd-ccfe-hnz';
 
@@ -307,7 +312,7 @@ export const notifyMeetingScheduled = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: participants.map((p) => p.email),
     subject: `[Buildicy ERP] Scheduled Meeting: ${meeting.title}`,
@@ -323,7 +328,7 @@ export const notifyTaskDeleted = async (
   contributor: User,
   actor: User,
   project?: Project | null
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const actorFormatted = formatUserRole(actor);
   const contributorFormatted = formatUserRole(contributor);
 
@@ -343,7 +348,7 @@ export const notifyTaskDeleted = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [contributor.email],
     subject: `[Buildicy ERP] Task Cancelled: ${task.description.substring(0, 30)}...`,
@@ -386,7 +391,7 @@ export const sendDailyOverdueDigestEmail = async (
 export const sendForgotPasswordEmail = async (
   user: User,
   passwordStr: string
-): Promise<void> => {
+): Promise<{ success: boolean; error?: string }> => {
   const html = buildEmailTemplate(
     'Password Recovery Request',
     'Account Credentials',
@@ -403,7 +408,7 @@ export const sendForgotPasswordEmail = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [user.email],
     subject: `[Buildicy ERP] Password Recovery: Credentials for ${user.fullName}`,
@@ -485,8 +490,10 @@ export const sendWelcomeMessageToAll = async (
 export const sendWelcomeMessageToUser = async (
   user: User,
   sender: User
-): Promise<void> => {
-  if (!user.email || !user.email.includes('@')) return;
+): Promise<{ success: boolean; error?: string }> => {
+  if (!user.email || !user.email.includes('@')) {
+    return { success: false, error: 'User does not have a valid email address.' };
+  }
 
   const html = buildEmailTemplate(
     'Welcome to Buildicy ERP! 🚀',
@@ -507,7 +514,7 @@ export const sendWelcomeMessageToUser = async (
     `
   );
 
-  logNotification({
+  return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [user.email],
     subject: `[Buildicy ERP] 🚀 Special Welcome to Buildicy Workspace, ${user.fullName}!`,

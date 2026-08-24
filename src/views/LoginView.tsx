@@ -28,8 +28,10 @@ import {
 } from 'lucide-react';
 
 import { BuildicyLogo } from '@/components/common/BuildicyLogo';
+import { useToast } from '@/context/ToastContext';
 
 export const LoginView: React.FC = () => {
+  const toast = useToast();
   const newAuth = USE_FIREBASE_AUTH ? useAuth() : null;
   const legacyAuth = USE_FIREBASE_AUTH ? null : useLegacyAuth();
 
@@ -224,7 +226,9 @@ export const LoginView: React.FC = () => {
 
       // STRICT DB CHECK: IF USER DOES NOT EXIST IN DB -> DO NOT SEND EMAIL
       if (!matchedUser) {
-        setForgotErrorMsg(`❌ No account found matching "${forgotEmail}". Please check your registered email or contact system administration.`);
+        const errorText = `No account found matching "${forgotEmail}". Please check your registered email or contact system administration.`;
+        setForgotErrorMsg(`❌ ${errorText}`);
+        toast.error('Account Not Found 🔒', errorText);
         setIsSendingForgot(false);
         return;
       }
@@ -232,11 +236,18 @@ export const LoginView: React.FC = () => {
       // IF USER EXISTS IN DB -> DISPATCH PASSWORD RECOVERY EMAIL
       const passStr = matchedUser.password || (matchedUser.roleTier === 'admin' ? 'admin@123' : matchedUser.roleTier === 'reviewer' ? 'reviewer@123' : 'prajwal@123');
 
-      await sendForgotPasswordEmail(matchedUser, passStr);
-      setForgotSuccessMsg(`✅ Password recovery email successfully dispatched to ${matchedUser.email}! Check your inbox or Outbound Email Logs.`);
+      const res = await sendForgotPasswordEmail(matchedUser, passStr);
+      if (res && res.success === false) {
+        toast.error('Resend Mail Error', res.error || `Could not send email to ${matchedUser.email}`);
+        setForgotErrorMsg(`❌ Resend API Error: ${res.error || 'Failed to dispatch email.'}`);
+      } else {
+        setForgotSuccessMsg(`✅ Password recovery email successfully dispatched to ${matchedUser.email}! Check your inbox.`);
+        toast.success('Password Recovery Dispatched! 📧', `Password email successfully sent to ${matchedUser.email} via Resend.`);
+      }
     } catch (err: any) {
       console.error('Error sending forgot password email:', err);
       setForgotErrorMsg('Failed to dispatch password recovery email. Please check your network connection.');
+      toast.error('Dispatch Exception', err?.message || 'Network exception sending forgot password email.');
     } finally {
       setIsSendingForgot(false);
     }

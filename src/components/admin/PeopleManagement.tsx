@@ -13,8 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Users, Plus, ShieldCheck, UserCheck, Mail, GitBranch, Table as TableIcon, Edit3, Calendar, DollarSign, Key, Cake } from 'lucide-react';
 
+import { sendWelcomeMessageToUser } from '@/firebase/notifications';
+import { useToast } from '@/context/ToastContext';
+
 export const PeopleManagement: React.FC = () => {
-  const { currentUser, users, projects, tasks, attendanceRecords, addUser, updateUser, toggleUserActive } = useAuth();
+  const toast = useToast();
+  const { currentUser, users, projects, tasks, attendanceRecords, addUser, updateUser, toggleUserActive, addAuditLog } = useAuth();
+  const [sendingUserWelcomeId, setSendingUserWelcomeId] = useState<string | null>(null);
 
   const [viewMode, setViewMode] = useState<'directory' | 'org-tree'>('directory');
   
@@ -109,6 +114,30 @@ export const PeopleManagement: React.FC = () => {
     }
   };
 
+  const handleSendWelcomeToSingleUser = async (targetUser: User) => {
+    if (!currentUser || sendingUserWelcomeId) return;
+    setSendingUserWelcomeId(targetUser.id);
+    try {
+      const res = await sendWelcomeMessageToUser(targetUser, currentUser);
+      addAuditLog(
+        'WELCOME_EMAIL_SENT',
+        `User: ${targetUser.fullName}`,
+        `Individual welcome email dispatched to ${targetUser.email} via Resend Mail Gateway by ${currentUser.fullName}.`
+      );
+
+      if (res && res.success === false) {
+        toast.error('Resend Email Error', res.error || `Failed to send email to ${targetUser.email}`);
+      } else {
+        toast.success('Welcome Email Dispatched! 🚀', `Welcome email sent to ${targetUser.fullName} (${targetUser.email}) via Resend API.`);
+      }
+    } catch (err: any) {
+      console.error('Error sending individual welcome email:', err);
+      toast.error('Email Failed', err?.message || 'Unexpected exception sending welcome email.');
+    } finally {
+      setSendingUserWelcomeId(null);
+    }
+  };
+
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName.trim() || !email.trim() || !title.trim()) return;
@@ -133,8 +162,10 @@ export const PeopleManagement: React.FC = () => {
         active: true
       });
       setIsAddUserOpen(false);
-    } catch (err) {
+      toast.success('Member Onboarded! 🎉', `${firstName} ${lastName} added successfully.`);
+    } catch (err: any) {
       console.error('Error adding user:', err);
+      toast.error('Onboarding Error', err?.message || 'Could not onboard user.');
     } finally {
       setIsSubmitting(false);
     }
@@ -164,8 +195,10 @@ export const PeopleManagement: React.FC = () => {
         active: editIsActive
       });
       setIsEditUserOpen(false);
-    } catch (err) {
+      toast.success('Profile Updated! ✏️', `Updated profile for ${editFirstName} ${editLastName}.`);
+    } catch (err: any) {
       console.error('Error updating user:', err);
+      toast.error('Update Failed', err?.message || 'Could not update user profile.');
     } finally {
       setIsSubmitting(false);
     }
@@ -295,6 +328,19 @@ export const PeopleManagement: React.FC = () => {
                       }`}>
                         {u.active ? 'Active' : 'Inactive'}
                       </span>
+
+                      {/* Send Welcome Email Button */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSendWelcomeToSingleUser(u)}
+                        disabled={sendingUserWelcomeId === u.id}
+                        className="h-7 px-2.5 text-[10px] font-bold border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-lg gap-1 shrink-0"
+                        title={`Send welcome email to ${u.fullName} (${u.email}) via Resend`}
+                      >
+                        <Mail className="w-3 h-3 text-purple-600" />
+                        <span>{sendingUserWelcomeId === u.id ? 'Sending...' : 'Send Welcome'}</span>
+                      </Button>
 
                       {isAdmin && (
                         <Button 

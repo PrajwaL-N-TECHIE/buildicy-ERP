@@ -35,7 +35,10 @@ import {
   Mail
 } from 'lucide-react';
 
+import { useToast } from '@/context/ToastContext';
+
 export const HRHubView: React.FC = () => {
+  const toast = useToast();
   const { currentUser, users, projects, tasks, attendanceRecords, addUser, updateUser, toggleUserActive, sendChatMessage, addAuditLog } = useAuth();
   
   const [wishSuccessMsg, setWishSuccessMsg] = useState<string>('');
@@ -48,16 +51,21 @@ export const HRHubView: React.FC = () => {
     if (!currentUser || sendingUserWelcomeId) return;
     setSendingUserWelcomeId(targetUser.id);
     try {
-      await sendWelcomeMessageToUser(targetUser, currentUser);
+      const res = await sendWelcomeMessageToUser(targetUser, currentUser);
       addAuditLog(
         'WELCOME_EMAIL_SENT',
         `User: ${targetUser.fullName}`,
         `Individual welcome email dispatched to ${targetUser.email} via Resend Mail Gateway by ${currentUser.fullName}.`
       );
-      setWishSuccessMsg(`🚀 Special welcome message email dispatched to ${targetUser.fullName} (${targetUser.email}) via Resend!`);
-      setTimeout(() => setWishSuccessMsg(''), 6000);
-    } catch (err) {
+
+      if (res && res.success === false) {
+        toast.error('Resend Mail Error', res.error || `Could not send email to ${targetUser.email}`);
+      } else {
+        toast.success('Welcome Email Dispatched! 🚀', `Special welcome message dispatched to ${targetUser.fullName} (${targetUser.email}) via Resend API.`);
+      }
+    } catch (err: any) {
       console.error('Error sending individual welcome email:', err);
+      toast.error('Email Dispatch Failed', err?.message || 'Unexpected exception occurred while sending email.');
     } finally {
       setSendingUserWelcomeId(null);
     }
@@ -143,8 +151,10 @@ export const HRHubView: React.FC = () => {
 
   const handleSendWish = async (user: User) => {
     if (!isTodayBirthday(user)) {
-      setWishSuccessMsg(`🔒 Birthday wishes can only be sent on the member's actual birthday! (${user.fullName}'s DOB: ${user.dob})`);
-      setTimeout(() => setWishSuccessMsg(''), 5000);
+      toast.warning(
+        'Birthday Wish Restricted 🔒',
+        `Birthday wishes can only be sent on the member's actual birthday! (${user.fullName}'s DOB: ${user.dob})`
+      );
       return;
     }
 
@@ -155,8 +165,7 @@ export const HRHubView: React.FC = () => {
       text: wishText
     });
 
-    setWishSuccessMsg(`🎉 Birthday wish sent to ${user.fullName} in Team Messages!`);
-    setTimeout(() => setWishSuccessMsg(''), 5000);
+    toast.success('Birthday Wish Dispatched! 🎉', `Happy Birthday wish sent to ${user.fullName} in Team Messages.`);
   };
 
   const handleOpenAddUser = () => {
@@ -235,8 +244,10 @@ export const HRHubView: React.FC = () => {
         active: true
       });
       setIsAddUserOpen(false);
-    } catch (err) {
+      toast.success('Member Onboarded! 🎉', `${firstName} ${lastName} has been added to the personnel directory.`);
+    } catch (err: any) {
       console.error('Error adding user:', err);
+      toast.error('Onboarding Failed', err?.message || 'Could not add member.');
     } finally {
       setIsSubmitting(false);
     }
@@ -266,8 +277,10 @@ export const HRHubView: React.FC = () => {
         active: editIsActive
       });
       setIsEditUserOpen(false);
-    } catch (err) {
+      toast.success('Member Updated! ✏️', `Profile for ${editFirstName} ${editLastName} updated.`);
+    } catch (err: any) {
       console.error('Error updating user:', err);
+      toast.error('Update Failed', err?.message || 'Could not update member details.');
     } finally {
       setIsSubmitting(false);
     }
