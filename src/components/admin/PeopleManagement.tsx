@@ -257,8 +257,8 @@ export const PeopleManagement: React.FC = () => {
                     </div>
                   </TableCell>
 
-                  <TableCell className="py-3.5 px-3 font-mono text-xs text-slate-700">
-                    @{u.username || u.email.split('@')[0]}
+                  <TableCell className="py-3.5 px-3 font-mono text-xs text-purple-950 font-semibold">
+                    {u.email || u.username}
                   </TableCell>
 
                   <TableCell className="py-3.5 px-3">

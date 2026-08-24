@@ -482,3 +482,39 @@ export const sendWelcomeMessageToAll = async (
   return { count };
 };
 
+export const sendWelcomeMessageToUser = async (
+  user: User,
+  sender: User
+): Promise<void> => {
+  if (!user.email || !user.email.includes('@')) return;
+
+  const html = buildEmailTemplate(
+    'Welcome to Buildicy ERP! 🚀',
+    'Personal Welcome Announcement',
+    `
+      <p>Dear <strong>${user.fullName}</strong>,</p>
+      <p>We are delighted to welcome you to the <strong>Buildicy Enterprise ERP Workspace</strong>! 🎉</p>
+      <p>Your workspace portal is active and configured for real-time task management, project execution, team chat compliance, and HR analytics.</p>
+      <div class="detail-box">
+        <div class="detail-item"><span class="label">👤 Member Name:</span> ${user.fullName}</div>
+        <div class="detail-item"><span class="label">💼 Job Title:</span> ${user.title || 'Team Member'}</div>
+        <div class="detail-item"><span class="label">🛡️ Role Access:</span> ${user.roleTier.toUpperCase()}</div>
+        <div class="detail-item"><span class="label">📧 Username / Gmail:</span> ${user.email}</div>
+        <div class="detail-item"><span class="label">📣 Dispatched By:</span> ${sender.fullName} (${sender.roleTier.toUpperCase()})</div>
+      </div>
+      <p>Log in anytime to view your assigned tasks, collaborate with team members, and check daily shift boards.</p>
+      <a href="https://meet.google.com/sbd-ccfe-hnz" class="btn">Join Team Workspace</a>
+    `
+  );
+
+  logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [user.email],
+    subject: `[Buildicy ERP] 🚀 Special Welcome to Buildicy Workspace, ${user.fullName}!`,
+    bodyText: `Dear ${user.fullName}, Welcome to Buildicy Enterprise ERP! Log in at https://erp.buildicy.com with username: ${user.email}`,
+    htmlText: html,
+    triggerEvent: 'WELCOME_MESSAGE',
+    createdAt: new Date().toISOString(),
+  });
+};
+

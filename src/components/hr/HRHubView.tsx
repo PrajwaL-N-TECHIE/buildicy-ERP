@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { OrgTreeViewer } from '@/components/admin/OrgTreeViewer';
-import { sendWelcomeMessageToAll } from '@/firebase/notifications';
+import { sendWelcomeMessageToAll, sendWelcomeMessageToUser } from '@/firebase/notifications';
 import { 
   Cake, 
   Gift, 
@@ -42,23 +42,24 @@ export const HRHubView: React.FC = () => {
   const [birthdayFilter, setBirthdayFilter] = useState<'today' | 'this_month' | 'next_month' | 'all'>('today');
   const [viewMode, setViewMode] = useState<'directory' | 'org-tree'>('directory');
   const [isSendingWelcome, setIsSendingWelcome] = useState<boolean>(false);
+  const [sendingUserWelcomeId, setSendingUserWelcomeId] = useState<string | null>(null);
 
-  const handleSendWelcomeMessages = async () => {
-    if (isSendingWelcome || !currentUser) return;
-    setIsSendingWelcome(true);
+  const handleSendWelcomeToSingleUser = async (targetUser: User) => {
+    if (!currentUser || sendingUserWelcomeId) return;
+    setSendingUserWelcomeId(targetUser.id);
     try {
-      const res = await sendWelcomeMessageToAll(users, currentUser);
+      await sendWelcomeMessageToUser(targetUser, currentUser);
       addAuditLog(
-        'WELCOME_EMAILS_SENT',
-        `Personnel Directory (${res.count} members)`,
-        `Special welcome email dispatched to all ${res.count} team members via Resend Mail Gateway by ${currentUser.fullName}.`
+        'WELCOME_EMAIL_SENT',
+        `User: ${targetUser.fullName}`,
+        `Individual welcome email dispatched to ${targetUser.email} via Resend Mail Gateway by ${currentUser.fullName}.`
       );
-      setWishSuccessMsg(`🚀 Special welcome message email dispatched to all ${res.count} team members via Resend!`);
+      setWishSuccessMsg(`🚀 Special welcome message email dispatched to ${targetUser.fullName} (${targetUser.email}) via Resend!`);
       setTimeout(() => setWishSuccessMsg(''), 6000);
     } catch (err) {
-      console.error('Error sending welcome emails:', err);
+      console.error('Error sending individual welcome email:', err);
     } finally {
-      setIsSendingWelcome(false);
+      setSendingUserWelcomeId(null);
     }
   };
 
@@ -354,22 +355,9 @@ export const HRHubView: React.FC = () => {
           </div>
 
           {isAdmin && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleSendWelcomeMessages}
-                disabled={isSendingWelcome}
-                className="text-xs h-9 px-3.5 font-bold border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-xl shadow-2xs shrink-0 gap-1.5"
-                title="Dispatch special welcome message email to everyone via Resend"
-              >
-                <Mail className="w-4 h-4 text-purple-600" />
-                {isSendingWelcome ? 'Sending Emails...' : 'Send Welcome Message'}
-              </Button>
-              <Button size="sm" onClick={handleOpenAddUser} className="text-xs h-9 px-4 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0">
-                <Plus className="w-4 h-4 mr-1.5" /> Onboard Member
-              </Button>
-            </>
+            <Button size="sm" onClick={handleOpenAddUser} className="text-xs h-9 px-4 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0">
+              <Plus className="w-4 h-4 mr-1.5" /> Onboard Member
+            </Button>
           )}
         </div>
       </div>
@@ -471,24 +459,9 @@ export const HRHubView: React.FC = () => {
                 <Users className="w-4 h-4 text-purple-600" />
                 <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-100">Personnel Directory & Member Records</CardTitle>
               </div>
-              <div className="flex items-center space-x-2">
-                {isAdmin && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleSendWelcomeMessages}
-                    disabled={isSendingWelcome}
-                    className="text-xs h-8 px-3 font-bold border-purple-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-xl gap-1.5"
-                    title="Dispatch special welcome message email to everyone via Resend"
-                  >
-                    <Mail className="w-3.5 h-3.5 text-purple-600" />
-                    {isSendingWelcome ? 'Sending...' : 'Send Welcome Message'}
-                  </Button>
-                )}
-                <Badge variant="purple" className="text-[10px] font-extrabold">
-                  {users.length} Team Members
-                </Badge>
-              </div>
+              <Badge variant="purple" className="text-[10px] font-extrabold">
+                {users.length} Team Members
+              </Badge>
             </div>
           </CardHeader>
 
@@ -497,7 +470,7 @@ export const HRHubView: React.FC = () => {
               <TableHeader className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
                 <TableRow className="border-b border-slate-200 dark:border-slate-800">
                   <TableHead className="py-3 px-4 font-bold text-xs text-slate-800 dark:text-slate-200">Member Name</TableHead>
-                  <TableHead className="py-3 px-3 font-bold text-xs text-slate-800 dark:text-slate-200">Username</TableHead>
+                  <TableHead className="py-3 px-3 font-bold text-xs text-slate-800 dark:text-slate-200">Username (Gmail)</TableHead>
                   <TableHead className="py-3 px-3 font-bold text-xs text-slate-800 dark:text-slate-200">Role Tier</TableHead>
                   <TableHead className="py-3 px-3 font-bold text-xs text-slate-800 dark:text-slate-200">Job Title</TableHead>
                   <TableHead className="py-3 px-3 font-bold text-xs text-slate-800 dark:text-slate-200">DOB & Joining</TableHead>
@@ -531,8 +504,8 @@ export const HRHubView: React.FC = () => {
                       </TableCell>
 
                       {/* Username */}
-                      <TableCell className="py-3.5 px-3 font-mono text-xs text-slate-700 dark:text-slate-300">
-                        @{u.username || u.email.split('@')[0]}
+                      <TableCell className="py-3.5 px-3 font-mono text-xs text-purple-950 dark:text-purple-300 font-semibold">
+                        {u.email || u.username}
                       </TableCell>
 
                       {/* Role Tier */}
@@ -568,6 +541,19 @@ export const HRHubView: React.FC = () => {
                               ● Checked In
                             </span>
                           )}
+
+                          {/* Individual Welcome Message Button for each user row */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSendWelcomeToSingleUser(u)}
+                            disabled={sendingUserWelcomeId === u.id}
+                            className="h-7 px-2.5 text-[10px] font-bold border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-lg gap-1 shrink-0"
+                            title={`Send individual welcome email to ${u.fullName} (${u.email}) via Resend`}
+                          >
+                            <Mail className="w-3 h-3 text-purple-600" />
+                            <span>{sendingUserWelcomeId === u.id ? 'Sending...' : 'Send Welcome'}</span>
+                          </Button>
 
                           {isAdmin && (
                             <Button 

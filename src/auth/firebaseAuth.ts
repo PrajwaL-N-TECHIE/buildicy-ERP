@@ -26,7 +26,7 @@ export function buildUserProfileFromAuth(fbUser: FirebaseUser, roleTier: RoleTie
     firstName,
     lastName,
     fullName: displayName,
-    username: email.split('@')[0] || fbUser.uid,
+    username: email || fbUser.uid,
     email,
     title: 'Team Member',
     roleTier,
