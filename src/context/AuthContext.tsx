@@ -32,6 +32,7 @@ import {
 import { writeThrough } from '@/data/localStorageMirror';
 import {
   signInWithCredentials,
+  signInWithGoogleAuth,
   signOutCurrent,
   subscribeToAuthChanges,
   refreshTokenAndClaims,
@@ -79,6 +80,7 @@ interface AuthContextType {
 
   // Auth actions
   loginWithCredentials: (email: string, pass: string) => Promise<boolean>;
+  loginWithGoogle: () => Promise<boolean>;
   loginAsUser: (userId: string) => void;
   changePassword: (newPass: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -364,6 +366,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('signIn failed:', err);
       return false;
+    }
+  };
+
+  const loginWithGoogle = async (): Promise<boolean> => {
+    try {
+      const { user, roleTier: rt } = await signInWithGoogleAuth();
+      setCurrentUserId(user.id);
+      setRoleTier(rt);
+      addAuditLog('USER_LOGGED_IN', `User: ${user.fullName}`, `Authenticated with Google Sign-In (${user.email})`);
+      return true;
+    } catch (err) {
+      console.error('Google sign-in failed:', err);
+      throw err;
     }
   };
 
@@ -998,6 +1013,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       attendanceRecords,
       loginAsUser,
       loginWithCredentials,
+      loginWithGoogle,
       changePassword,
       logout,
       createTask,

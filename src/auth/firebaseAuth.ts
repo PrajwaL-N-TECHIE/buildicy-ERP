@@ -2,11 +2,15 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
   User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/firebase/config';
 import { User, RoleTier } from '@/types';
+
+export const googleProvider = new GoogleAuthProvider();
 
 export interface AuthSession {
   fbUser: FirebaseUser;
@@ -98,3 +102,24 @@ export const refreshTokenAndClaims = async (): Promise<{ roleTier: RoleTier; use
 
 export const subscribeToAuthChanges = (cb: (fbUser: FirebaseUser | null) => void) =>
   onAuthStateChanged(auth, cb);
+
+export const signInWithGoogleAuth = async (): Promise<AuthSession> => {
+  const cred = await signInWithPopup(auth, googleProvider);
+  const tokenResult = await cred.user.getIdTokenResult(true);
+  const roleTier = (tokenResult.claims.roleTier as RoleTier) || 'contributor';
+
+  let user: User;
+  try {
+    const userDoc = await getDocWithTimeout(doc(db, 'users', cred.user.uid));
+    if (userDoc.exists()) {
+      user = { id: cred.user.uid, ...(userDoc.data() || {}) } as User;
+    } else {
+      user = buildUserProfileFromAuth(cred.user, roleTier);
+    }
+  } catch (err) {
+    console.warn('[Auth] Firestore fetch warning during Google sign-in:', err);
+    user = buildUserProfileFromAuth(cred.user, roleTier);
+  }
+
+  return { fbUser: cred.user, user, roleTier };
+};

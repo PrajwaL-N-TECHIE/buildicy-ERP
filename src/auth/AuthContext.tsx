@@ -9,6 +9,8 @@ import React, {
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut,
   updatePassword,
   User as FbUser,
@@ -18,12 +20,15 @@ import { auth, db } from '@/firebase/config';
 import { buildUserProfileFromAuth } from '@/auth/firebaseAuth';
 import type { RoleTier, User } from '@/types';
 
+export const googleProvider = new GoogleAuthProvider();
+
 export interface AuthContextValue {
   currentUser: User | null;
   fbUser: FbUser | null;
   loading: boolean;
   roleTier: RoleTier | null;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
 }
@@ -90,6 +95,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await signInWithEmailAndPassword(auth, email.trim(), password);
   }, []);
 
+  const loginWithGoogle = useCallback(async () => {
+    setLoading(true);
+    await signInWithPopup(auth, googleProvider);
+  }, []);
+
   const logout = useCallback(async () => {
     await signOut(auth);
   }, []);
@@ -108,10 +118,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       loading,
       roleTier: currentUser?.roleTier ?? null,
       login,
+      loginWithGoogle,
       logout,
       changePassword,
     }),
-    [currentUser, fbUser, loading, login, logout, changePassword]
+    [currentUser, fbUser, loading, login, loginWithGoogle, logout, changePassword]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -126,6 +137,7 @@ export function useAuth(): AuthContextValue {
       loading: false,
       roleTier: null,
       login: async () => {},
+      loginWithGoogle: async () => {},
       logout: async () => {},
       changePassword: async () => {},
     };
