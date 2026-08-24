@@ -8,6 +8,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/firebase/config';
 import type { ChatMessage } from '@/types';
@@ -92,5 +93,12 @@ export const chatRepo = {
       timestamp: serverTimestamp(),
     });
     return ref.id;
+  },
+  async updateMessage(messageId: string, patch: Partial<ChatMessage>) {
+    try {
+      await updateDoc(doc(db, 'chat_messages', messageId), patch as Partial<ChatMessage>);
+    } catch (err) {
+      console.warn('[chatRepo] updateMessage notice:', err);
+    }
   },
 };

@@ -18,7 +18,7 @@ export const MeetingList: React.FC = () => {
   const [title, setTitle] = useState<string>('');
   const [projectId, setProjectId] = useState<string>('none');
   const [scheduledAt, setScheduledAt] = useState<string>('');
-  const [location, setLocation] = useState<string>('Google Meet / Room 101');
+  const [location, setLocation] = useState<string>('https://meet.google.com/sbd-ccfe-hnz');
   const [notes, setNotes] = useState<string>('');
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -36,7 +36,7 @@ export const MeetingList: React.FC = () => {
     setTitle('');
     setProjectId('none');
     setScheduledAt(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
-    setLocation('Google Meet (meet.google.com/abc-defg-hij)');
+    setLocation('https://meet.google.com/sbd-ccfe-hnz');
     setNotes('');
     setSelectedParticipants([currentUser.id]);
     setIsDialogOpen(true);
@@ -147,9 +147,19 @@ export const MeetingList: React.FC = () => {
                 </CardHeader>
 
                 <CardContent className="p-5 space-y-3.5">
-                  <div className="flex items-center gap-2 text-xs text-slate-700 font-medium">
-                    <MapPin className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <span className="font-semibold text-slate-900">{meet.location}</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-purple-50/80 p-3 rounded-xl border border-purple-200/80">
+                    <div className="flex items-center gap-2 text-xs font-bold text-purple-950 truncate">
+                      <Video className="w-4 h-4 text-purple-600 shrink-0 animate-pulse" />
+                      <span className="truncate">{meet.location || 'https://meet.google.com/sbd-ccfe-hnz'}</span>
+                    </div>
+                    <a
+                      href={meet.location && meet.location.startsWith('http') ? meet.location : 'https://meet.google.com/sbd-ccfe-hnz'}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-2xs transition-all shrink-0"
+                    >
+                      <Video className="w-3.5 h-3.5" /> Join Call →
+                    </a>
                   </div>
 
                   {meet.notes && (

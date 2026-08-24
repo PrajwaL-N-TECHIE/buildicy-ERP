@@ -14,6 +14,7 @@ import {
   AttendanceRecord,
   RoleTier,
 } from '@/types';
+import { todayIso } from '@/lib/date';
 import {
   getStoredUsers,
   getStoredProjects,
@@ -34,9 +35,11 @@ import {
   signOutCurrent,
   subscribeToAuthChanges,
   refreshTokenAndClaims,
+  buildUserProfileFromAuth,
 } from '@/auth/firebaseAuth';
 import { updatePassword } from 'firebase/auth';
-import { auth } from '@/firebase/config';
+import { setDoc, doc } from 'firebase/firestore';
+import { auth, db } from '@/firebase/config';
 import {
   notifyTaskAssigned,
   notifyTaskSentBack,
@@ -44,6 +47,8 @@ import {
   notifyTaskFinalApproved,
   notifyProjectDeadlineChanged,
   notifyMeetingScheduled,
+  notifyTaskDeleted,
+  sendBirthdayWishEmail,
 } from '@/firebase/notifications';
 
 import { USE_FIRESTORE_DATA } from '@/data/firestore';
@@ -52,6 +57,7 @@ import { projectsRepo } from '@/data/projectsRepo';
 import { tasksRepo } from '@/data/tasksRepo';
 import { meetingsRepo } from '@/data/meetingsRepo';
 import { auditLogsRepo } from '@/data/auditLogsRepo';
+import { chatRepo } from '@/data/chatRepo';
 
 const USE_FIREBASE_AUTH = import.meta.env.VITE_USE_FIREBASE_AUTH === 'true';
 
@@ -88,6 +94,7 @@ interface AuthContextType {
     deliverableUrl?: string;
     checklist?: TaskChecklistItem[];
   }) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   reviewTaskByReviewer: (taskId: string, decision: 'approved' | 'sent_back', remark: string) => Promise<void>;
   reviewTaskByAdmin: (taskId: string, decision: 'approved' | 'sent_back', remark: string) => Promise<void>;
@@ -103,6 +110,8 @@ interface AuthContextType {
   }) => Promise<void>;
   deleteMeeting: (meetingId: string) => Promise<void>;
   sendChatMessage: (data: { text: string; channelId?: string | null; recipientId?: string | null }) => Promise<void>;
+  deleteChatMessage: (messageId: string) => Promise<void>;
+  markMessagesAsSeen: (messageIds: string[]) => void;
   checkIn: () => Promise<void>;
   checkOut: () => Promise<void>;
   addUser: (userData: Omit<User, 'id' | 'createdAt'>) => Promise<void>;
@@ -110,6 +119,7 @@ interface AuthContextType {
   toggleUserActive: (userId: string) => Promise<void>;
   addProject: (projectData: Omit<Project, 'id' | 'createdAt'> | string, memberIds?: string[]) => Promise<void>;
   updateProject: (projectId: string, data: Partial<Project>) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   addAuditLog: (action: string, target: string, details: string) => void;
   refreshData: () => void;
 }
@@ -137,6 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentAuthEmail, setCurrentAuthEmail] = useState<string | null>(null);
   const [roleTier, setRoleTier] = useState<RoleTier | null>(null);
+  const [fbUserProfile, setFbUserProfile] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
   const refreshData = () => {
@@ -150,16 +161,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (USE_FIRESTORE_DATA) {
-      // Clear legacy localStorage cache keys so old mock data never leaks into the UI
+      if (USE_FIREBASE_AUTH && !currentUserId) {
+        setUsers([]);
+        setProjects([]);
+        setTasks([]);
+        setMeetings([]);
+        setAuditLogs([]);
+        return;
+      }
+
+      // Clear legacy localStorage cache keys for core synced entity tables
       localStorage.removeItem('erp_users');
       localStorage.removeItem('erp_projects');
       localStorage.removeItem('erp_tasks');
       localStorage.removeItem('erp_meetings');
       localStorage.removeItem('erp_notifications');
       localStorage.removeItem('erp_audit_logs');
-      localStorage.removeItem('erp_chat_messages');
-      localStorage.removeItem('erp_attendance_records');
-      setAttendanceRecords([]);
 
       const unsubUsers = usersRepo.watchAll((nextUsers) => {
         setUsers(nextUsers);
@@ -187,7 +204,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       refreshData();
     }
-  }, []);
+  }, [currentUserId]);
+
+  // Automated 12 AM / Daily Birthday Check Engine
+  useEffect(() => {
+    if (!users || users.length === 0) return;
+
+    const checkBirthdays = () => {
+      const today = new Date();
+      const monthStr = String(today.getMonth() + 1).padStart(2, '0');
+      const dayStr = String(today.getDate()).padStart(2, '0');
+      const todayMonthDay = `${monthStr}-${dayStr}`;
+      const todayIsoStr = todayIso();
+
+      users.forEach(u => {
+        if (!u.dob) return;
+        let dobMonthDay = '';
+        if (u.dob.includes('-')) {
+          const parts = u.dob.split('-');
+          if (parts.length === 3) {
+            dobMonthDay = `${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          }
+        } else if (u.dob.includes('/')) {
+          const parts = u.dob.split('/');
+          if (parts.length === 3) {
+            dobMonthDay = `${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+          }
+        }
+
+        if (dobMonthDay && dobMonthDay === todayMonthDay) {
+          const sentKey = `erp_bday_sent_${u.id}_${todayIsoStr}`;
+          if (!localStorage.getItem(sentKey)) {
+            console.log(`[Birthday Engine] Today is ${u.fullName}'s Birthday! Dispatching automated wish email.`);
+            sendBirthdayWishEmail(u);
+            localStorage.setItem(sentKey, 'true');
+          }
+        }
+      });
+    };
+
+    checkBirthdays();
+
+    // Schedule check for next 12 AM midnight
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const msUntilMidnight = midnight.getTime() - now.getTime();
+
+    const timeout = setTimeout(() => {
+      checkBirthdays();
+    }, msUntilMidnight);
+
+    return () => clearTimeout(timeout);
+  }, [users]);
 
   // Auth subscription: real Firebase Auth in prod, LS persona in dev fallback.
   useEffect(() => {
@@ -208,16 +276,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCurrentUserId(null);
           setCurrentAuthEmail(null);
           setRoleTier(null);
+          setFbUserProfile(null);
           setAuthLoading(false);
           return;
         }
+        setAuthLoading(true);
         setCurrentAuthEmail(fbUser.email || null);
         try {
           const { roleTier: rt, user } = await refreshTokenAndClaims();
-          if (user) setCurrentUserId(user.id);
+          if (user) {
+            setCurrentUserId(user.id);
+            setFbUserProfile(user);
+          } else {
+            const fallback = buildUserProfileFromAuth(fbUser, rt);
+            setCurrentUserId(fbUser.uid);
+            setFbUserProfile(fallback);
+          }
           setRoleTier(rt);
         } catch (err) {
           console.warn('[AuthContext] Auth state refresh fallback:', err);
+          const fallback = buildUserProfileFromAuth(fbUser, 'contributor');
+          setCurrentUserId(fbUser.uid);
+          setFbUserProfile(fallback);
         } finally {
           setAuthLoading(false);
         }
@@ -230,14 +310,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const currentUser = useMemo(() => {
     if (!currentUserId && !currentAuthEmail) return null;
-    return (
-      users.find(
-        (u) =>
-          u.id === currentUserId ||
-          (currentAuthEmail && u.email.toLowerCase() === currentAuthEmail.toLowerCase())
-      ) || null
+    const found = users.find(
+      (u) =>
+        u.id === currentUserId ||
+        (currentAuthEmail && u.email.toLowerCase() === currentAuthEmail.toLowerCase())
     );
-  }, [users, currentUserId, currentAuthEmail]);
+    if (found) return found;
+    if (fbUserProfile) return fbUserProfile;
+    return null;
+  }, [users, currentUserId, currentAuthEmail, fbUserProfile]);
 
   const loginAsUser = (userId: string) => {
     if (USE_FIREBASE_AUTH) {
@@ -320,10 +401,103 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       recipientId: data.recipientId || null,
       text: data.text,
       timestamp: new Date().toISOString(),
+      readBy: [currentUser.id],
     };
     const updated = [...chatMessages, newMsg];
     setChatMessages(updated);
     localStorage.setItem('erp_chat_messages', JSON.stringify(updated));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        if (data.recipientId) {
+          const dmId = chatRepo.dmIdFor(currentUser.id, data.recipientId);
+          await chatRepo.sendDM(dmId, {
+            senderId: currentUser.id,
+            channelId: null,
+            recipientId: data.recipientId,
+            text: data.text,
+            readBy: [currentUser.id],
+          });
+        } else if (data.channelId) {
+          await chatRepo.sendChannelMessage(data.channelId, {
+            senderId: currentUser.id,
+            channelId: data.channelId,
+            recipientId: null,
+            text: data.text,
+            readBy: [currentUser.id],
+          });
+        }
+      } catch (err) {
+        console.warn('[AuthContext] Firestore chat sync notice:', err);
+      }
+    }
+  };
+
+  const markMessagesAsSeen = (messageIds: string[]) => {
+    if (!currentUser || messageIds.length === 0) return;
+    let updatedAny = false;
+    const updated = chatMessages.map((m) => {
+      if (messageIds.includes(m.id)) {
+        const currentReadBy = m.readBy || [m.senderId];
+        if (!currentReadBy.includes(currentUser.id)) {
+          updatedAny = true;
+          return { ...m, readBy: [...currentReadBy, currentUser.id] };
+        }
+      }
+      return m;
+    });
+    if (updatedAny) {
+      setChatMessages(updated);
+      localStorage.setItem('erp_chat_messages', JSON.stringify(updated));
+    }
+  };
+
+  const deleteChatMessage = async (messageId: string) => {
+    if (!currentUser) return;
+    const target = chatMessages.find((m) => m.id === messageId);
+    if (!target) return;
+
+    const originalText = target.originalText || target.text;
+    const updated = chatMessages.map((m) => {
+      if (m.id === messageId) {
+        return {
+          ...m,
+          deleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy: currentUser.id,
+          originalText,
+          text: '[Message deleted by user]',
+        };
+      }
+      return m;
+    });
+
+    setChatMessages(updated);
+    localStorage.setItem('erp_chat_messages', JSON.stringify(updated));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await chatRepo.updateMessage(messageId, {
+          deleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy: currentUser.id,
+          originalText,
+          text: '[Message deleted by user]',
+        });
+      } catch (err) {
+        console.warn('[AuthContext] Firestore deleteChatMessage error:', err);
+      }
+    }
+
+    addAuditLog(
+      'CHAT_MESSAGE_DELETED',
+      `Deleted message by ${currentUser.fullName}`,
+      `Original text: "${originalText}". Target: ${
+        target.channelId || `DM:${target.recipientId}`
+      }.`
+    );
+
+    refreshData();
   };
 
   const checkIn = async () => {
@@ -487,6 +661,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTasks(updatedTasks);
     saveTasks(updatedTasks);
 
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await setDoc(doc(db, 'tasks', newTask.id), newTask);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore createTask error:', err);
+      }
+    }
+
     const assignee = users.find(u => u.id === data.contributorId);
     const proj = projects.find(p => p.id === data.projectId);
     if (!isSelfLogged && assignee && proj) {
@@ -496,6 +678,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addAuditLog(isSelfLogged ? 'TASK_LOGGED' : 'TASK_ASSIGNED',
       `Task: ${data.description.substring(0, 30)}...`,
       `Logged ${data.hours} hrs for ${proj?.name || 'General'}. Priority: ${data.priority || 'medium'}.`);
+    refreshData();
+  };
+
+  const deleteTask = async (taskId: string) => {
+    if (!currentUser) return;
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (!targetTask) return;
+
+    if (USE_FIRESTORE_DATA) {
+      await tasksRepo.delete(taskId);
+    } else {
+      const updated = tasks.filter((t) => t.id !== taskId);
+      setTasks(updated);
+      saveTasks(updated);
+    }
+
+    const contributor = users.find((u) => u.id === targetTask.contributorId);
+    const proj = projects.find((p) => p.id === targetTask.projectId);
+
+    if (contributor) {
+      await notifyTaskDeleted(targetTask, contributor, currentUser, proj);
+    }
+
+    addAuditLog(
+      'TASK_DELETED',
+      `Deleted Task: ${targetTask.description.substring(0, 30)}...`,
+      `Deleted by ${currentUser.fullName} (${currentUser.roleTier}).`
+    );
     refreshData();
   };
 
@@ -519,6 +729,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setTasks(tasks.map(t => t.id === taskId ? updated : t));
     saveTasks(tasks.map(t => t.id === taskId ? updated : t));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await tasksRepo.update(taskId, updated);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore updateTaskStatus error:', err);
+      }
+    }
+
     addAuditLog('TASK_STATUS_UPDATED', `Task: ${target.description.substring(0, 30)}...`,
       `Status updated from ${target.status} to ${status}`);
     refreshData();
@@ -551,6 +770,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setTasks(tasks.map(t => t.id === taskId ? updated : t));
     saveTasks(tasks.map(t => t.id === taskId ? updated : t));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await tasksRepo.update(taskId, updated);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore reviewTaskByReviewer error:', err);
+      }
+    }
 
     const contributor = users.find(u => u.id === target.contributorId);
     const proj = projects.find(p => p.id === target.projectId);
@@ -592,6 +819,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setTasks(tasks.map(t => t.id === taskId ? updated : t));
     saveTasks(tasks.map(t => t.id === taskId ? updated : t));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await tasksRepo.update(taskId, updated);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore reviewTaskByAdmin error:', err);
+      }
+    }
 
     const contributor = users.find(u => u.id === target.contributorId);
     if (isApprove && contributor) {
@@ -697,6 +932,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updated = [...projects, newProj];
     setProjects(updated);
     saveProjects(updated);
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await setDoc(doc(db, 'projects', newProj.id), newProj);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore addProject error:', err);
+      }
+    }
+
     addAuditLog('PROJECT_CREATED', `Project: ${newProj.name}`, `Created project ${newProj.name}`);
     refreshData();
   };
@@ -705,7 +949,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updated = projects.map(p => p.id === projectId ? { ...p, ...data } : p);
     setProjects(updated);
     saveProjects(updated);
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await projectsRepo.update(projectId, data);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore updateProject error:', err);
+      }
+    }
+
     addAuditLog('PROJECT_UPDATED', `Project ID: ${projectId}`, `Updated project details.`);
+    refreshData();
+  };
+
+  const deleteProject = async (projectId: string) => {
+    if (!currentUser) return;
+    const target = projects.find(p => p.id === projectId);
+    if (!target) return;
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await projectsRepo.delete(projectId);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore deleteProject error:', err);
+      }
+    } else {
+      const updated = projects.filter(p => p.id !== projectId);
+      setProjects(updated);
+      saveProjects(updated);
+    }
+
+    addAuditLog('PROJECT_DELETED', `Project: ${target.name}`, `Deleted project "${target.name}" permanently from directory.`);
     refreshData();
   };
 
@@ -727,6 +1001,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       changePassword,
       logout,
       createTask,
+      deleteTask,
       updateTaskStatus,
       reviewTaskByReviewer,
       reviewTaskByAdmin,
@@ -735,6 +1010,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       scheduleMeeting,
       deleteMeeting,
       sendChatMessage,
+      deleteChatMessage,
+      markMessagesAsSeen,
       checkIn,
       checkOut,
       addUser,
@@ -742,6 +1019,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toggleUserActive,
       addProject,
       updateProject,
+      deleteProject,
       addAuditLog,
       refreshData,
     }}>
@@ -753,7 +1031,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    console.warn('[AuthContext] useAuth invoked outside AuthProvider during reload/HMR, returning fallback.');
+    return {} as AuthContextType;
   }
   return context;
 };

@@ -6,6 +6,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Mail, LogOut, ShieldAlert, CheckCircle2, UserCheck, Layers, ChevronDown } from 'lucide-react';
 
+import { BuildicyLogo } from '@/components/common/BuildicyLogo';
+
 interface NavbarProps {
   onOpenNotifications: () => void;
 }
@@ -35,43 +37,23 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNotifications }) => {
       <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-8">
         
         {/* Brand & Logo */}
-        <div className="flex items-center space-x-3.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm font-bold transition-transform hover:scale-105">
-            <Layers className="h-5 w-5" />
+        <div className="flex items-center space-x-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm font-bold transition-transform hover:scale-105">
+            <BuildicyLogo size={28} />
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-extrabold text-base tracking-tight text-foreground">Task Tracker</span>
-              <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase px-2 py-0.5 rounded-full bg-muted border border-border/50">
-                ERP v3
+              <span className="font-extrabold text-base tracking-tight text-foreground">Buildicy <span className="text-indigo-600">ERP</span></span>
+              <span className="text-[10px] font-semibold tracking-wider text-indigo-700 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300 uppercase px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
+                v3.0
               </span>
             </div>
-            <p className="text-[11px] text-muted-foreground hidden sm:block font-medium">Internal Task & Operations Platform</p>
+            <p className="text-[11px] text-muted-foreground hidden sm:block font-medium">Enterprise Management Platform</p>
           </div>
         </div>
 
-        {/* Navigation & Persona Switcher */}
+        {/* Navigation Actions */}
         <div className="flex items-center space-x-3 sm:space-x-4">
-          
-          {/* Quick Persona Switcher for Instant Testing */}
-          <div className="hidden md:flex items-center space-x-2 bg-muted/60 p-1 pl-3 rounded-lg border border-border/60 shadow-xs">
-            <span className="text-[11px] font-medium text-muted-foreground">Active Role:</span>
-            <Select value={currentUser.id} onValueChange={loginAsUser}>
-              <SelectTrigger className="h-8 text-xs w-[200px] border-0 bg-background shadow-xs focus:ring-1">
-                <SelectValue placeholder="Select Persona" />
-              </SelectTrigger>
-              <SelectContent align="end" className="w-[230px]">
-                {users.filter(u => u.active).map(user => (
-                  <SelectItem key={user.id} value={user.id} className="text-xs py-2">
-                    <div className="flex items-center justify-between w-full gap-2">
-                      <span className="font-semibold text-foreground">{user.fullName}</span>
-                      <span className="text-[10px] font-medium text-muted-foreground capitalize">({user.roleTier})</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           {/* Mail Log Button */}
           <Button 

@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -47,5 +48,8 @@ export const projectsRepo = {
     deadline: Project['deadline']
   ) {
     await updateDoc(doc(db, PATH, projectId), { deadline });
+  },
+  async delete(projectId: string) {
+    await deleteDoc(doc(db, PATH, projectId));
   },
 };

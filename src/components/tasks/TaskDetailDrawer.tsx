@@ -91,7 +91,9 @@ export const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ task, open, 
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Logged Hours</span>
+              <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
+                {task.status === 'Not Started' || task.status === 'In Progress' ? 'Allocated Hours' : 'Logged Hours'}
+              </span>
               <span className="font-bold text-slate-900 block text-xs">{task.hours} hrs</span>
             </div>
 

@@ -119,6 +119,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, activeTab, onSel
       case 'project-mgmt': return 'Project Directory';
       case 'analytics': return 'Executive Analytics Hub';
       case 'chat-logs': return 'Chat Compliance Logs';
+      case 'sent-emails': return 'Sent Outbound Emails Log';
       case 'audit-logs': return 'System Audit Logs';
       default: return 'Tasks & Workflow';
     }

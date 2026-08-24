@@ -8,15 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { FolderPlus, Edit2, Plus, Users, Calendar } from 'lucide-react';
+import { FolderPlus, Edit2, Plus, Users, Calendar, Trash2 } from 'lucide-react';
 
 export const ProjectManagement: React.FC = () => {
-  const { currentUser, projects, users, addProject, updateProject } = useAuth();
+  const { currentUser, projects, users, addProject, updateProject, deleteProject } = useAuth();
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingProjId, setEditingProjId] = useState<string | null>(null);
   const [name, setName] = useState<string>('');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [deleteConfirmProj, setDeleteConfirmProj] = useState<Project | null>(null);
 
   if (currentUser?.roleTier !== 'admin') {
     return null;
@@ -57,6 +58,13 @@ export const ProjectManagement: React.FC = () => {
       addProject(name, selectedMemberIds);
     }
     setIsModalOpen(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteConfirmProj) {
+      await deleteProject(deleteConfirmProj.id);
+      setDeleteConfirmProj(null);
+    }
   };
 
   return (
@@ -125,7 +133,7 @@ export const ProjectManagement: React.FC = () => {
 
                     <TableCell className="text-right space-x-1">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(proj)} className="h-7 text-xs px-2">
-                        <Edit2 className="w-3 h-3 text-muted-foreground" /> Edit Members
+                        <Edit2 className="w-3 h-3 text-muted-foreground mr-1" /> Edit Members
                       </Button>
                       <Button 
                         variant="ghost" 
@@ -134,6 +142,14 @@ export const ProjectManagement: React.FC = () => {
                         className="h-7 text-xs px-2 text-muted-foreground"
                       >
                         {proj.active ? 'Archive' : 'Activate'}
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setDeleteConfirmProj(proj)} 
+                        className="h-7 text-xs px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" /> Delete
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -202,6 +218,28 @@ export const ProjectManagement: React.FC = () => {
             </DialogFooter>
 
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmProj} onOpenChange={(open) => !open && setDeleteConfirmProj(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <Trash2 className="w-4 h-4" /> Delete Project
+            </DialogTitle>
+            <DialogDescription className="text-xs pt-1">
+              Are you sure you want to delete project <strong className="text-slate-900">{deleteConfirmProj?.name}</strong> from the directory? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setDeleteConfirmProj(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" size="sm" className="text-xs bg-red-600 hover:bg-red-700 text-white" onClick={handleConfirmDelete}>
+              Delete Project
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

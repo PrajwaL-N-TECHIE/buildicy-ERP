@@ -20,7 +20,7 @@ export const TaskFormDialog: React.FC<TaskFormDialogProps> = ({ open, onOpenChan
   const [contributorId, setContributorId] = useState<string>(users.find(u => u.roleTier === 'contributor')?.id || '');
   const [projectId, setProjectId] = useState<string>(projects[0]?.id || '');
   const [description, setDescription] = useState<string>('');
-  const [hours, setHours] = useState<number>(4);
+  const [hours, setHours] = useState<number>(1);
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [dueDate, setDueDate] = useState<string>('');
   const [deliverableUrl, setDeliverableUrl] = useState<string>('');
@@ -69,7 +69,7 @@ export const TaskFormDialog: React.FC<TaskFormDialogProps> = ({ open, onOpenChan
 
       // Reset form
       setDescription('');
-      setHours(4);
+      setHours(1);
       setPriority('medium');
       setDueDate('');
       setDeliverableUrl('');

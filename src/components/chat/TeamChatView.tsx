@@ -17,6 +17,7 @@ import {
   Plus, 
   Sparkles, 
   CheckCheck, 
+  Eye,
   Users, 
   Paperclip, 
   Smile, 
@@ -24,7 +25,14 @@ import {
   ThumbsUp, 
   Heart,
   Lock,
-  Globe
+  Globe,
+  Trash2,
+  ShieldAlert,
+  Download,
+  FileText,
+  Volume2,
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 
 interface ChannelItem {
@@ -65,7 +73,7 @@ const EMOJI_PACKS = [
 ];
 
 export const TeamChatView: React.FC = () => {
-  const { currentUser, users, chatMessages, attendanceRecords, sendChatMessage } = useAuth();
+  const { currentUser, users, chatMessages, attendanceRecords, sendChatMessage, deleteChatMessage, markMessagesAsSeen } = useAuth();
   
   const [channels, setChannels] = useState<ChannelItem[]>(INITIAL_CHANNELS);
   const [activeTab, setActiveTab] = useState<'channels' | 'direct'>('channels');
@@ -78,12 +86,44 @@ export const TeamChatView: React.FC = () => {
   const [activeEmojiCategory, setActiveEmojiCategory] = useState<number>(0);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const prevMsgCountRef = useRef<number>(chatMessages.length);
 
   // Create Channel Dialog State
   const [isCreateChannelOpen, setIsCreateChannelOpen] = useState<boolean>(false);
   const [newChannelName, setNewChannelName] = useState<string>('');
   const [newChannelDesc, setNewChannelDesc] = useState<string>('');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+
+  // Compliance Audit Logs Modal State
+  const [isComplianceLogsOpen, setIsComplianceLogsOpen] = useState<boolean>(false);
+  const [complianceUserFilter, setComplianceUserFilter] = useState<string>('all');
+  const [complianceSearch, setComplianceSearch] = useState<string>('');
+
+  // 🔔 Play Web Audio API double chime on receiving message
+  useEffect(() => {
+    if (chatMessages.length > prevMsgCountRef.current) {
+      const latestMsg = chatMessages[chatMessages.length - 1];
+      if (latestMsg && currentUser && latestMsg.senderId !== currentUser.id) {
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5 note
+          osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5 note
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.25);
+        } catch (e) {
+          console.warn('[AudioChime] Failed playing chime:', e);
+        }
+      }
+    }
+    prevMsgCountRef.current = chatMessages.length;
+  }, [chatMessages.length, currentUser?.id]);
 
   if (!currentUser) return null;
 
@@ -102,6 +142,44 @@ export const TeamChatView: React.FC = () => {
       return msg.channelId === selectedChannelId;
     }
   });
+
+  // 👁️ Auto-mark incoming messages as seen when viewed by receiver
+  useEffect(() => {
+    if (!currentUser || visibleMessages.length === 0) return;
+    const unseenMsgIds = visibleMessages
+      .filter(m => m.senderId !== currentUser.id && !(m.readBy || []).includes(currentUser.id))
+      .map(m => m.id);
+
+    if (unseenMsgIds.length > 0) {
+      markMessagesAsSeen(unseenMsgIds);
+    }
+  }, [visibleMessages.length, selectedChannelId, selectedRecipientId, currentUser?.id]);
+
+  // Dynamic sorting: Get latest message time for each channel
+  const getChannelLatestTimestamp = (channelId: string): number => {
+    const channelMsgs = chatMessages.filter(m => m.channelId === channelId);
+    if (channelMsgs.length === 0) return 0;
+    return new Date(channelMsgs[channelMsgs.length - 1].timestamp).getTime();
+  };
+
+  const sortedChannels = [...channels].sort((a, b) => getChannelLatestTimestamp(b.id) - getChannelLatestTimestamp(a.id));
+
+  // Dynamic sorting: Get latest message time for direct DM with a specific user
+  const getDmLatestTimestamp = (otherUserId: string): number => {
+    const dmMsgs = chatMessages.filter(m => 
+      (m.senderId === currentUser.id && m.recipientId === otherUserId) ||
+      (m.senderId === otherUserId && m.recipientId === currentUser.id)
+    );
+    if (dmMsgs.length === 0) return 0;
+    return new Date(dmMsgs[dmMsgs.length - 1].timestamp).getTime();
+  };
+
+  const filteredUsers = users.filter(u => 
+    u.id !== currentUser.id && 
+    (u.fullName.toLowerCase().includes(userSearchQuery.toLowerCase()) || u.title.toLowerCase().includes(userSearchQuery.toLowerCase()))
+  );
+
+  const sortedUsers = [...filteredUsers].sort((a, b) => getDmLatestTimestamp(b.id) - getDmLatestTimestamp(a.id));
 
   // Auto-scroll to bottom on new visible message
   useEffect(() => {
@@ -168,10 +246,50 @@ export const TeamChatView: React.FC = () => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
-  const filteredUsers = users.filter(u => 
-    u.id !== currentUser.id && 
-    (u.fullName.toLowerCase().includes(userSearchQuery.toLowerCase()) || u.title.toLowerCase().includes(userSearchQuery.toLowerCase()))
-  );
+  // Compliance Audit Logs Filtered Dataset
+  const complianceLogs = chatMessages.filter(msg => {
+    const sender = users.find(u => u.id === msg.senderId);
+    const senderMatch = complianceUserFilter === 'all' || msg.senderId === complianceUserFilter;
+    const searchMatch = !complianceSearch.trim() || 
+      (msg.text && msg.text.toLowerCase().includes(complianceSearch.toLowerCase())) ||
+      (msg.originalText && msg.originalText.toLowerCase().includes(complianceSearch.toLowerCase())) ||
+      (sender && sender.fullName.toLowerCase().includes(complianceSearch.toLowerCase()));
+
+    return senderMatch && searchMatch;
+  });
+
+  const handleExportComplianceCSV = () => {
+    const headers = ['Message ID', 'Timestamp', 'Sender Name', 'Sender Title', 'Target Channel/DM', 'Original Text', 'Current Text', 'Status', 'Deleted At', 'Deleted By'];
+    const rows = complianceLogs.map(msg => {
+      const sender = users.find(u => u.id === msg.senderId);
+      const deleter = msg.deletedBy ? users.find(u => u.id === msg.deletedBy)?.fullName : 'N/A';
+      const targetLabel = msg.channelId ? msg.channelId : `DM: ${users.find(u => u.id === msg.recipientId)?.fullName || msg.recipientId}`;
+      const statusStr = msg.deleted ? 'DELETED' : 'ACTIVE';
+      
+      return [
+        `"${msg.id}"`,
+        `"${msg.timestamp}"`,
+        `"${sender?.fullName || msg.senderId}"`,
+        `"${sender?.title || 'N/A'}"`,
+        `"${targetLabel}"`,
+        `"${(msg.originalText || msg.text).replace(/"/g, '""')}"`,
+        `"${msg.text.replace(/"/g, '""')}"`,
+        `"${statusStr}"`,
+        `"${msg.deletedAt || 'N/A'}"`,
+        `"${deleter}"`
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `buildicy_chat_compliance_logs_${todayIso()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="h-[calc(100vh-140px)] min-h-[620px] bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden flex flex-col md:flex-row">
@@ -189,7 +307,9 @@ export const TeamChatView: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight">Team Messages</h3>
-                <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-wider block">Live WebSockets</span>
+                <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-wider block flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live WebSockets
+                </span>
               </div>
             </div>
 
@@ -213,13 +333,13 @@ export const TeamChatView: React.FC = () => {
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Group Channels ({channels.length})
+              Group Channels ({sortedChannels.length})
             </button>
             <button
               onClick={() => {
                 setActiveTab('direct');
-                if (!selectedRecipientId && filteredUsers[0]) {
-                  setSelectedRecipientId(filteredUsers[0].id);
+                if (!selectedRecipientId && sortedUsers[0]) {
+                  setSelectedRecipientId(sortedUsers[0].id);
                 }
               }}
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
@@ -236,31 +356,42 @@ export const TeamChatView: React.FC = () => {
           {activeTab === 'channels' ? (
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1 pb-1">
-                <span>Public Channels</span>
+                <span>Public Channels (Top Active)</span>
               </div>
 
-              {channels.map(ch => (
-                <button
-                  key={ch.id}
-                  onClick={() => {
-                    setSelectedChannelId(ch.id);
-                    setSelectedRecipientId(null);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                    !isDirectChat && selectedChannelId === ch.id 
-                      ? 'bg-purple-600 text-white shadow-xs font-bold' 
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2 truncate">
-                    <Hash className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                    <span className="truncate">{ch.name}</span>
-                  </div>
-                  <span className="text-[10px] font-normal opacity-80 shrink-0">
-                    {ch.memberIds.length} members
-                  </span>
-                </button>
-              ))}
+              {sortedChannels.map(ch => {
+                const latestTs = getChannelLatestTimestamp(ch.id);
+                const hasRecentMsg = latestTs > 0;
+
+                return (
+                  <button
+                    key={ch.id}
+                    onClick={() => {
+                      setSelectedChannelId(ch.id);
+                      setSelectedRecipientId(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                      !isDirectChat && selectedChannelId === ch.id 
+                        ? 'bg-purple-600 text-white shadow-xs font-bold' 
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2 truncate">
+                      <Hash className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                      <span className="truncate">{ch.name}</span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-1 shrink-0">
+                      {hasRecentMsg && (
+                        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" title="Active conversation" />
+                      )}
+                      <span className="text-[10px] font-normal opacity-80">
+                        {ch.memberIds.length} members
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <div className="space-y-2">
@@ -275,8 +406,9 @@ export const TeamChatView: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                {filteredUsers.map(user => {
+                {sortedUsers.map(user => {
                   const isCheckedIn = attendanceRecords.some(r => r.userId === user.id && r.date === todayIso() && r.status === 'checked_in');
+                  const latestTs = getDmLatestTimestamp(user.id);
 
                   return (
                     <button
@@ -303,6 +435,11 @@ export const TeamChatView: React.FC = () => {
                       <div className="truncate text-left flex-1">
                         <div className="flex items-center justify-between">
                           <span className="block truncate leading-tight">{user.fullName}</span>
+                          {latestTs > 0 && (
+                            <span className={`text-[9px] font-mono ${isDirectChat && selectedRecipientId === user.id ? 'text-purple-200' : 'text-slate-400'}`}>
+                              {new Date(latestTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
                         </div>
                         <span className={`text-[10px] block truncate ${isDirectChat && selectedRecipientId === user.id ? 'text-purple-100' : 'text-slate-400'}`}>
                           {user.title} {isCheckedIn ? '• Online' : ''}
@@ -317,19 +454,21 @@ export const TeamChatView: React.FC = () => {
 
         </div>
 
-        {/* Logged In User Footer Profile Card */}
-        <div className="p-3 border-t border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center space-x-2.5">
-          <Avatar className="h-8 w-8 border border-purple-300">
-            {currentUser.avatarUrl ? <AvatarImage src={currentUser.avatarUrl} alt={currentUser.fullName} /> : null}
-            <AvatarFallback className="bg-purple-600 text-white font-bold text-xs">
-              {getInitials(currentUser.fullName)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="truncate flex-1">
-            <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block truncate">{currentUser.fullName}</span>
-            <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active WebSocket
-            </span>
+        {/* Logged In User Footer Profile Card & Compliance Action */}
+        <div className="p-3 border-t border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between">
+          <div className="flex items-center space-x-2.5 truncate">
+            <Avatar className="h-8 w-8 border border-purple-300 shrink-0">
+              {currentUser.avatarUrl ? <AvatarImage src={currentUser.avatarUrl} alt={currentUser.fullName} /> : null}
+              <AvatarFallback className="bg-purple-600 text-white font-bold text-xs">
+                {getInitials(currentUser.fullName)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="truncate">
+              <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block truncate">{currentUser.fullName}</span>
+              <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Active WebSocket
+              </span>
+            </div>
           </div>
         </div>
 
@@ -372,7 +511,16 @@ export const TeamChatView: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Badge variant="purple" className="text-[10px] font-bold">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsComplianceLogsOpen(true)}
+              className="h-8 text-xs font-bold text-purple-700 dark:text-purple-300 border-purple-200 dark:border-slate-700 hover:bg-purple-50 dark:hover:bg-slate-800 gap-1.5 rounded-xl"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-purple-600" />
+              <span>Compliance Audit Logs</span>
+            </Button>
+            <Badge variant="purple" className="text-[10px] font-bold hidden sm:inline-flex">
               {isDirectChat ? '1-on-1 Direct DM' : `# ${activeChannel?.name}`}
             </Badge>
           </div>
@@ -396,7 +544,12 @@ export const TeamChatView: React.FC = () => {
             visibleMessages.map(msg => {
               const sender = users.find(u => u.id === msg.senderId);
               const isOwnMessage = msg.senderId === currentUser.id;
+              const canDelete = isOwnMessage || currentUser.roleTier === 'admin' || currentUser.roleTier === 'reviewer';
               const reactions = messageReactions[msg.id] || [];
+              const readByList = msg.readBy || [msg.senderId];
+              const isSeen = isDirectChat
+                ? readByList.includes(selectedRecipientId || '') || readByList.length > 1
+                : readByList.length > 1;
 
               return (
                 <div 
@@ -411,33 +564,67 @@ export const TeamChatView: React.FC = () => {
                   </Avatar>
 
                   <div className={`space-y-1 ${isOwnMessage ? 'items-end text-right' : ''}`}>
-                    <div className="flex items-center space-x-2">
+                    <div className={`flex items-center space-x-2 ${isOwnMessage ? 'justify-end' : ''}`}>
                       <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{sender?.fullName}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">
+                      <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {isOwnMessage && (
+                          isSeen ? (
+                            <span className="flex items-center gap-0.5 text-purple-600 dark:text-purple-400 font-bold ml-1" title="Seen by receiver">
+                              <Eye className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                              <span className="text-[9px]">Seen</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-0.5 text-slate-400 ml-1" title="Sent">
+                              <CheckCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            </span>
+                          )
+                        )}
                       </span>
                     </div>
                     
-                    <div className={`p-3 rounded-2xl text-xs font-medium leading-relaxed shadow-2xs relative ${
-                      isOwnMessage 
-                        ? 'bg-purple-600 text-white rounded-tr-xs' 
-                        : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs border border-slate-200 dark:border-slate-700'
-                    }`}>
-                      {msg.text}
-
-                      {/* Quick Emoji Reaction Pill on Hover (Positioned Above Bubble) */}
-                      <div className="absolute -top-8 right-2 opacity-0 group-hover:opacity-100 transition-all flex items-center space-x-2 bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-purple-200 dark:border-slate-700 shadow-md z-20">
-                        <button type="button" onClick={() => handleAddReaction(msg.id, '👍')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Thumbs Up">👍</button>
-                        <button type="button" onClick={() => handleAddReaction(msg.id, '❤️')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Love">❤️</button>
-                        <button type="button" onClick={() => handleAddReaction(msg.id, '🔥')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Fire">🔥</button>
-                        <button type="button" onClick={() => handleAddReaction(msg.id, '🚀')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Rocket">🚀</button>
-                        <button type="button" onClick={() => handleAddReaction(msg.id, '✅')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Done">✅</button>
-                        <button type="button" onClick={() => handleAddReaction(msg.id, '🎉')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Celebrate">🎉</button>
+                    {msg.deleted ? (
+                      <div className="p-3 rounded-2xl text-xs font-normal italic leading-relaxed bg-slate-100 dark:bg-slate-800/60 text-slate-500 border border-dashed border-slate-300 dark:border-slate-700 flex items-center space-x-2 shadow-2xs">
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>[Message deleted by user - Audited in Compliance Logs]</span>
                       </div>
-                    </div>
+                    ) : (
+                      <div className={`p-3 rounded-2xl text-xs font-medium leading-relaxed shadow-2xs relative ${
+                        isOwnMessage 
+                          ? 'bg-purple-600 text-white rounded-tr-xs' 
+                          : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs border border-slate-200 dark:border-slate-700'
+                      }`}>
+                        {msg.text}
+
+                        {/* Quick Action & Emoji Pill on Hover (Positioned Above Bubble) */}
+                        <div className={`absolute -top-8 ${isOwnMessage ? 'left-2' : 'right-2'} opacity-0 group-hover:opacity-100 transition-all flex items-center space-x-1.5 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-full border border-purple-200 dark:border-slate-700 shadow-md z-20`}>
+                          <button type="button" onClick={() => handleAddReaction(msg.id, '👍')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Thumbs Up">👍</button>
+                          <button type="button" onClick={() => handleAddReaction(msg.id, '❤️')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Love">❤️</button>
+                          <button type="button" onClick={() => handleAddReaction(msg.id, '🔥')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Fire">🔥</button>
+                          <button type="button" onClick={() => handleAddReaction(msg.id, '🚀')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Rocket">🚀</button>
+                          <button type="button" onClick={() => handleAddReaction(msg.id, '✅')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Done">✅</button>
+                          <button type="button" onClick={() => handleAddReaction(msg.id, '🎉')} className="hover:scale-130 transition-transform text-sm cursor-pointer" title="Celebrate">🎉</button>
+                          
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Delete this message? It will be marked deleted in live chat and logged in compliance audit logs.')) {
+                                  deleteChatMessage(msg.id);
+                                }
+                              }}
+                              className="ml-1 p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-md transition-colors cursor-pointer border-l border-slate-200 dark:border-slate-700 pl-2"
+                              title="Delete Message (Recorded in Compliance Logs)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Reactions Display */}
-                    {reactions.length > 0 && (
+                    {!msg.deleted && reactions.length > 0 && (
                       <div className="flex flex-wrap gap-1 pt-0.5">
                         {reactions.map((r, i) => (
                           <span key={i} className="text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1.5 py-0.2 rounded-full">
@@ -608,6 +795,173 @@ export const TeamChatView: React.FC = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Compliance Audit Logs Dialog */}
+      <Dialog open={isComplianceLogsOpen} onOpenChange={setIsComplianceLogsOpen}>
+        <DialogContent className="sm:max-w-4xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="pb-3 border-b border-slate-100 dark:border-slate-800 flex flex-row items-center justify-between pr-6">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2.5 bg-purple-100 dark:bg-slate-800 text-purple-700 dark:text-purple-300 rounded-xl">
+                <ShieldAlert className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Chat & Compliance Audit Logs
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500 font-normal">
+                  User-wise audited chat records, sent messages, and deleted message history.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleExportComplianceCSV}
+              size="sm"
+              className="h-8 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-xs gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV Report</span>
+            </Button>
+          </DialogHeader>
+
+          {/* Compliance Stats Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2">
+            <Card className="p-3 bg-purple-50/50 dark:bg-slate-800/50 border border-purple-100 dark:border-slate-800 rounded-xl">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Total Audited Msgs</span>
+              <span className="text-lg font-black text-purple-950 dark:text-purple-300">{chatMessages.length}</span>
+            </Card>
+
+            <Card className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-xl">
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider block">Active Messages</span>
+              <span className="text-lg font-black text-emerald-700 dark:text-emerald-300">
+                {chatMessages.filter(m => !m.deleted).length}
+              </span>
+            </Card>
+
+            <Card className="p-3 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 rounded-xl">
+              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-bold uppercase tracking-wider block">Deleted Messages</span>
+              <span className="text-lg font-black text-rose-700 dark:text-rose-300">
+                {chatMessages.filter(m => m.deleted).length}
+              </span>
+            </Card>
+
+            <Card className="p-3 bg-slate-100/60 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Team Contributers</span>
+              <span className="text-lg font-black text-slate-900 dark:text-slate-100">{users.length}</span>
+            </Card>
+          </div>
+
+          {/* User-Wise & Search Filters */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2">
+            <div className="flex items-center space-x-2 w-full sm:w-auto">
+              <Filter className="w-4 h-4 text-purple-600 shrink-0" />
+              <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 shrink-0">Filter User:</Label>
+              <select
+                value={complianceUserFilter}
+                onChange={e => setComplianceUserFilter(e.target.value)}
+                className="h-8 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-2.5 focus:ring-2 focus:ring-purple-600"
+              >
+                <option value="all">All Users ({users.length})</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.fullName} ({u.title})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+              <Input
+                placeholder="Search audit text / user..."
+                value={complianceSearch}
+                onChange={e => setComplianceSearch(e.target.value)}
+                className="pl-8 h-8 text-xs border-slate-300 dark:border-slate-700 rounded-xl"
+              />
+            </div>
+          </div>
+
+          {/* Compliance Audit Table */}
+          <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden mt-3">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="p-3">User / Sender</th>
+                  <th className="p-3">Target</th>
+                  <th className="p-3">Audited Message Text</th>
+                  <th className="p-3">Timestamp</th>
+                  <th className="p-3">Compliance Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {complianceLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                      No audited chat records found matching filters.
+                    </td>
+                  </tr>
+                ) : (
+                  complianceLogs.map(msg => {
+                    const sender = users.find(u => u.id === msg.senderId);
+                    const targetLabel = msg.channelId ? msg.channelId : `DM: ${users.find(u => u.id === msg.recipientId)?.fullName || msg.recipientId}`;
+
+                    return (
+                      <tr key={msg.id} className="hover:bg-purple-50/40 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-semibold text-slate-900 dark:text-slate-100">
+                          <div>{sender?.fullName || msg.senderId}</div>
+                          <span className="text-[10px] text-slate-400 font-normal">{sender?.title}</span>
+                        </td>
+                        <td className="p-3 font-mono text-[11px] text-purple-700 dark:text-purple-400">
+                          {targetLabel}
+                        </td>
+                        <td className="p-3 max-w-xs">
+                          <div className="font-medium text-slate-800 dark:text-slate-200 line-clamp-2">
+                            {msg.originalText || msg.text}
+                          </div>
+                          {msg.deleted && (
+                            <span className="text-[10px] text-rose-500 italic block mt-0.5">
+                              Live chat text replaced with "[Message deleted by user]"
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                          {new Date(msg.timestamp).toLocaleString()}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {msg.deleted ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200">
+                              DELETED (Audited)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200">
+                              ACTIVE
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <DialogFooter className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-[11px] text-slate-400 font-normal">
+              Buildicy ERP Enterprise Compliance Engine • Immutable Audit Logging
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsComplianceLogsOpen(false)}
+              className="h-8 px-4 text-xs font-semibold rounded-xl border-slate-300"
+            >
+              Close Window
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

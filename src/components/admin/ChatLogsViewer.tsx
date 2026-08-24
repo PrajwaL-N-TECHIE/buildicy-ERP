@@ -16,7 +16,8 @@ export const ChatLogsViewer: React.FC = () => {
 
   const filteredMessages = chatMessages.filter(msg => {
     const sender = users.find(u => u.id === msg.senderId);
-    const textMatch = msg.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const contentToSearch = msg.originalText || msg.text;
+    const textMatch = contentToSearch.toLowerCase().includes(searchQuery.toLowerCase()) ||
                       (sender && sender.fullName.toLowerCase().includes(searchQuery.toLowerCase()));
 
     if (!textMatch) return false;
@@ -27,11 +28,12 @@ export const ChatLogsViewer: React.FC = () => {
   });
 
   const handleExportCSV = () => {
-    const headers = ['Message ID', 'Timestamp', 'Sender Name', 'Sender Role', 'Channel / Recipient', 'Message Content'];
+    const headers = ['Message ID', 'Timestamp', 'Sender Name', 'Sender Role', 'Channel / Recipient', 'Message Content', 'Deletion Status'];
     const rows = filteredMessages.map(msg => {
       const sender = users.find(u => u.id === msg.senderId);
       const recipient = msg.recipientId ? users.find(u => u.id === msg.recipientId) : null;
       const channelOrRecipient = msg.channelId ? msg.channelId : recipient ? `@${recipient.fullName}` : 'N/A';
+      const content = msg.originalText || msg.text;
 
       return [
         msg.id,
@@ -39,7 +41,8 @@ export const ChatLogsViewer: React.FC = () => {
         `"${sender?.fullName || 'Unknown'}"`,
         sender?.roleTier || '',
         `"${channelOrRecipient}"`,
-        `"${msg.text.replace(/"/g, '""')}"`
+        `"${content.replace(/"/g, '""')}"`,
+        msg.deleted ? '"Deleted by user"' : '"Active"'
       ].join(',');
     });
 
@@ -187,7 +190,23 @@ export const ChatLogsViewer: React.FC = () => {
                       </TableCell>
 
                       <TableCell className="py-3.5 px-4">
-                        <p className="text-xs font-normal text-slate-800 leading-relaxed max-w-md">{msg.text}</p>
+                        {msg.deleted ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-xs font-semibold text-slate-900 leading-relaxed max-w-md bg-amber-50/80 px-2 py-1 rounded border border-amber-200/60">
+                                {msg.originalText || msg.text}
+                              </p>
+                              <Badge variant="secondary" className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                Deleted by user
+                              </Badge>
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              Original content logged for audit compliance
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs font-normal text-slate-800 leading-relaxed max-w-md">{msg.text}</p>
+                        )}
                       </TableCell>
 
                       <TableCell className="py-3.5 px-3 text-right">

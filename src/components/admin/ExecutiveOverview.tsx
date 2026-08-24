@@ -157,15 +157,15 @@ export const ExecutiveOverview: React.FC = () => {
     <div className="space-y-6">
       
       {/* Header Banner */}
-      <div className="p-5 bg-white border border-purple-100 rounded-2xl shadow-2xs space-y-3">
+      <div className="p-5 bg-white dark:bg-slate-900 border border-purple-100 dark:border-slate-800 rounded-2xl shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2.5 bg-purple-100 text-purple-700 rounded-xl">
+            <div className="p-2.5 bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 rounded-xl">
               <TrendingUp className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Executive & Operational Analytics Hub</h2>
-              <p className="text-xs text-slate-500 font-normal">Real-time operational metrics, workload analytics, and overdue escalations.</p>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Executive & Operational Analytics Hub</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">Real-time operational metrics, workload analytics, and overdue escalations.</p>
             </div>
           </div>
 
@@ -174,9 +174,9 @@ export const ExecutiveOverview: React.FC = () => {
               variant="outline" 
               size="sm" 
               onClick={handleExportCSVReport}
-              className="text-xs h-9 px-3.5 font-medium gap-1.5 border-purple-200 text-purple-950 hover:bg-purple-50 rounded-xl"
+              className="text-xs h-9 px-3.5 font-medium gap-1.5 border-purple-200 dark:border-purple-800 text-purple-950 dark:text-purple-200 hover:bg-purple-50 dark:hover:bg-purple-950/40 rounded-xl"
             >
-              <Download className="w-3.5 h-3.5 text-purple-600" /> Export CSV Report
+              <Download className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" /> Export CSV Report
             </Button>
 
             <Button 
@@ -191,8 +191,8 @@ export const ExecutiveOverview: React.FC = () => {
         </div>
 
         {digestSuccessMsg && (
-          <div className="p-2.5 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-semibold flex items-center gap-1.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> {digestSuccessMsg}
+          <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs font-semibold flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> {digestSuccessMsg}
           </div>
         )}
       </div>
@@ -201,69 +201,69 @@ export const ExecutiveOverview: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Card 1: Total Tasks */}
-        <Card className="border border-slate-200 bg-white shadow-2xs rounded-2xl p-5 space-y-2">
+        <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-2xl p-5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Tasks</span>
-            <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Tasks</span>
+            <div className="p-2 bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 rounded-lg">
               <Layers className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-extrabold text-slate-900">{totalTasks}</span>
-            <span className="text-xs text-slate-500 font-medium">Logged in ERP</span>
+            <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">{totalTasks}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Logged in ERP</span>
           </div>
-          <div className="text-[11px] text-slate-400 font-normal pt-1 border-t border-slate-100">
+          <div className="text-[11px] text-slate-400 dark:text-slate-500 font-normal pt-1 border-t border-slate-100 dark:border-slate-800">
             Across {projects.length} Active Projects &bull; {totalHoursLogged} Total Hrs
           </div>
         </Card>
 
         {/* Card 2: Overdue Tasks */}
-        <Card className="border border-rose-200 bg-rose-50/40 shadow-2xs rounded-2xl p-5 space-y-2">
+        <Card className="border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/30 shadow-2xs rounded-2xl p-5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">Overdue Tasks</span>
-            <div className="p-2 bg-rose-100 text-rose-700 rounded-lg">
+            <span className="text-xs font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider">Overdue Tasks</span>
+            <div className="p-2 bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 rounded-lg">
               <AlertCircle className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-extrabold text-rose-700">{overdueTasks.length}</span>
-            <span className="text-xs text-rose-700 font-semibold">Requires Action</span>
+            <span className="text-2xl font-extrabold text-rose-700 dark:text-rose-300">{overdueTasks.length}</span>
+            <span className="text-xs text-rose-700 dark:text-rose-300 font-semibold">Requires Action</span>
           </div>
-          <div className="text-[11px] text-rose-700/80 font-medium pt-1 border-t border-rose-200/60">
+          <div className="text-[11px] text-rose-700/80 dark:text-rose-300/80 font-medium pt-1 border-t border-rose-200/60 dark:border-rose-900/50">
             {overdueTasks.length > 0 ? `${overdueTasks.length} task(s) past target deadline` : 'No overdue tasks!'}
           </div>
         </Card>
 
         {/* Card 3: Pending Review */}
-        <Card className="border border-amber-200 bg-amber-50/40 shadow-2xs rounded-2xl p-5 space-y-2">
+        <Card className="border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/30 shadow-2xs rounded-2xl p-5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">Pending Review</span>
-            <div className="p-2 bg-amber-100 text-amber-700 rounded-lg">
+            <span className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">Pending Review</span>
+            <div className="p-2 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-lg">
               <Send className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-extrabold text-amber-800">{pendingReviewTasks}</span>
-            <span className="text-xs text-amber-800 font-semibold">In Review Queue</span>
+            <span className="text-2xl font-extrabold text-amber-800 dark:text-amber-300">{pendingReviewTasks}</span>
+            <span className="text-xs text-amber-800 dark:text-amber-300 font-semibold">In Review Queue</span>
           </div>
-          <div className="text-[11px] text-amber-800/80 font-medium pt-1 border-t border-amber-200/60">
+          <div className="text-[11px] text-amber-800/80 dark:text-amber-300/80 font-medium pt-1 border-t border-amber-200/60 dark:border-amber-900/50">
             Reviewer & Admin approval chain
           </div>
         </Card>
 
         {/* Card 4: Completion Rate */}
-        <Card className="border border-emerald-200 bg-emerald-50/40 shadow-2xs rounded-2xl p-5 space-y-2">
+        <Card className="border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/30 shadow-2xs rounded-2xl p-5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Completed Tasks</span>
-            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
+            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Completed Tasks</span>
+            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-lg">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="text-2xl font-extrabold text-emerald-800">{completedTasks}</span>
-            <span className="text-xs text-emerald-700 font-semibold">({overallCompletionRate}% Rate)</span>
+            <span className="text-2xl font-extrabold text-emerald-800 dark:text-emerald-300">{completedTasks}</span>
+            <span className="text-xs text-emerald-700 dark:text-emerald-300 font-semibold">({overallCompletionRate}% Rate)</span>
           </div>
-          <div className="text-[11px] text-emerald-800/80 font-medium pt-1 border-t border-emerald-200/60">
+          <div className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 font-medium pt-1 border-t border-emerald-200/60 dark:border-emerald-900/50">
             Final founder sign-off granted
           </div>
         </Card>
@@ -274,10 +274,10 @@ export const ExecutiveOverview: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Chart 1: Status Breakdown */}
-        <Card className="border border-slate-200 bg-white shadow-2xs rounded-2xl p-5 space-y-3">
+        <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-2xl p-5 space-y-3">
           <div className="flex items-center space-x-2">
-            <PieChart className="w-4 h-4 text-purple-600" />
-            <span className="font-bold text-sm text-slate-900">Task Status Distribution</span>
+            <PieChart className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Task Status Distribution</span>
           </div>
           <div className="h-64 flex items-center justify-center">
             <Doughnut data={statusDoughnutData} options={{ maintainAspectRatio: false }} />
@@ -285,10 +285,10 @@ export const ExecutiveOverview: React.FC = () => {
         </Card>
 
         {/* Chart 2: Project Workload Hours */}
-        <Card className="border border-slate-200 bg-white shadow-2xs rounded-2xl p-5 space-y-3">
+        <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-2xl p-5 space-y-3">
           <div className="flex items-center space-x-2">
-            <BarChart3 className="w-4 h-4 text-purple-600" />
-            <span className="font-bold text-sm text-slate-900">Logged Hours by Project</span>
+            <BarChart3 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Logged Hours by Project</span>
           </div>
           <div className="h-64 flex items-center justify-center">
             <Bar data={projectHoursBarData} options={{ maintainAspectRatio: false }} />
@@ -298,18 +298,18 @@ export const ExecutiveOverview: React.FC = () => {
       </div>
 
       {/* Overdue Tasks Escalation List */}
-      <Card className="border border-rose-200/80 bg-white shadow-xs rounded-2xl overflow-hidden">
-        <CardHeader className="p-5 bg-rose-50/60 border-b border-rose-200/80">
+      <Card className="border border-rose-200/80 dark:border-rose-900/50 bg-white dark:bg-slate-900 shadow-xs rounded-2xl overflow-hidden">
+        <CardHeader className="p-5 bg-rose-50/60 dark:bg-rose-950/40 border-b border-rose-200/80 dark:border-rose-900/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
-              <CardTitle className="text-sm font-bold text-slate-900">Overdue Tasks Escalation Table</CardTitle>
+              <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+              <CardTitle className="text-sm font-bold text-slate-900 dark:text-slate-100">Overdue Tasks Escalation Table</CardTitle>
             </div>
             <Badge variant="destructive" className="text-[10px] font-extrabold">
               {overdueTasks.length} Overdue
             </Badge>
           </div>
-          <CardDescription className="text-xs text-slate-600 font-normal pt-0.5">
+          <CardDescription className="text-xs text-slate-600 dark:text-slate-400 font-normal pt-0.5">
             Tasks past target completion date requiring immediate follow-up with assignees.
           </CardDescription>
         </CardHeader>
@@ -404,9 +404,9 @@ export const ExecutiveOverview: React.FC = () => {
           const pct = projTasks.length > 0 ? Math.round((projCompleted / projTasks.length) * 100) : 0;
 
           return (
-            <Card key={proj.id} className="border border-slate-200 bg-white shadow-2xs rounded-2xl p-5 space-y-3">
+            <Card key={proj.id} className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-2xl p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-sm text-slate-900">{proj.name}</span>
+                <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{proj.name}</span>
                 <Badge variant="purple" className="text-[10px] font-bold">
                   {projTasks.length} Tasks
                 </Badge>
@@ -415,21 +415,21 @@ export const ExecutiveOverview: React.FC = () => {
               {/* Progress Bar */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="text-slate-500">Progress</span>
-                  <span className="text-purple-700 font-bold">{pct}% ({projCompleted}/{projTasks.length})</span>
+                  <span className="text-slate-500 dark:text-slate-400">Progress</span>
+                  <span className="text-purple-700 dark:text-purple-300 font-bold">{pct}% ({projCompleted}/{projTasks.length})</span>
                 </div>
-                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-purple-600 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+                <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-purple-600 dark:bg-purple-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100">
-                <span className="text-slate-500">Target Deadline:</span>
-                <span className="font-bold text-slate-900">{proj.deadline?.dueDate || 'Not set'}</span>
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-slate-500 dark:text-slate-400">Target Deadline:</span>
+                <span className="font-bold text-slate-900 dark:text-slate-100">{proj.deadline?.dueDate || 'Not set'}</span>
               </div>
 
               {projOverdue > 0 && (
-                <div className="text-[11px] font-bold text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-center justify-between">
+                <div className="text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 p-2 rounded-lg border border-rose-200 dark:border-rose-900/50 flex items-center justify-between">
                   <span>⚠️ Overdue Tasks:</span>
                   <span>{projOverdue} Task(s)</span>
                 </div>

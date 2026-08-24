@@ -27,7 +27,7 @@ function getClient() {
   return client;
 }
 
-const FROM_ADDRESS = process.env.MAIL_FROM_ADDRESS || 'erp@buildicy.com';
+const FROM_ADDRESS = process.env.MAIL_FROM_ADDRESS || 'notifications@erp.buildicy.com';
 
 /**
  * Send a transactional email via Resend. Never throws — failures are

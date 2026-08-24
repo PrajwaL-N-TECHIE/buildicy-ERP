@@ -54,6 +54,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setLoading(false);
         return;
       }
+      setLoading(true);
       try {
         const snap = await Promise.race([
           getDoc(doc(db, 'users', next.uid)),
@@ -85,6 +86,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    setLoading(true);
     await signInWithEmailAndPassword(auth, email.trim(), password);
   }, []);
 
@@ -118,7 +120,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {
-    throw new Error('useAuth must be used within an <AuthProvider>');
+    return {
+      currentUser: null,
+      fbUser: null,
+      loading: false,
+      roleTier: null,
+      login: async () => {},
+      logout: async () => {},
+      changePassword: async () => {},
+    };
   }
   return ctx;
 }

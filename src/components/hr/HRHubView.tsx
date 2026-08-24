@@ -83,7 +83,48 @@ export const HRHubView: React.FC = () => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
+  const isTodayBirthday = (u: User): boolean => {
+    if (!u.dob) return false;
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+
+    let month = 0;
+    let day = 0;
+    const dobStr = u.dob.trim();
+
+    if (dobStr.includes('-')) {
+      const parts = dobStr.split('-');
+      if (parts.length === 3) {
+        month = parseInt(parts[1], 10);
+        day = parseInt(parts[2], 10);
+      }
+    } else if (dobStr.includes('/')) {
+      const parts = dobStr.split('/');
+      if (parts.length === 3) {
+        month = parseInt(parts[0], 10);
+        day = parseInt(parts[1], 10);
+      }
+    } else {
+      const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const lower = dobStr.toLowerCase();
+      monthNames.forEach((m, idx) => {
+        if (lower.includes(m)) month = idx + 1;
+      });
+      const numMatch = dobStr.match(/\d+/);
+      if (numMatch) day = parseInt(numMatch[0], 10);
+    }
+
+    return month === currentMonth && day === currentDay;
+  };
+
   const handleSendWish = async (user: User) => {
+    if (!isTodayBirthday(user)) {
+      setWishSuccessMsg(`🔒 Birthday wishes can only be sent on the member's actual birthday! (${user.fullName}'s DOB: ${user.dob})`);
+      setTimeout(() => setWishSuccessMsg(''), 5000);
+      return;
+    }
+
     const wishText = `🎉 Happy Birthday ${user.fullName}! 🎂 Wishing you a fantastic year ahead filled with health, happiness, and outstanding achievements! 🎈✨`;
     
     await sendChatMessage({
@@ -375,26 +416,35 @@ export const HRHubView: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {birthdayUsers.map(user => (
-              <div key={user.id} className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between shadow-2xs hover:border-purple-300 transition-colors">
-                <div className="flex items-center space-x-3 truncate">
-                  <Avatar className="h-9 w-9 border border-purple-300 shrink-0">
-                    {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.fullName} /> : null}
-                    <AvatarFallback className="bg-purple-600 text-white text-xs font-bold">
-                      {getInitials(user.fullName)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="truncate">
-                    <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block leading-tight truncate">{user.fullName}</span>
-                    <span className="text-[10px] text-slate-500 font-normal block truncate">{user.title}</span>
-                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold block pt-0.5">🎂 {user.dob || 'Aug 21'}</span>
+            {birthdayUsers.map(user => {
+              const isBirthdayToday = isTodayBirthday(user);
+              return (
+                <div key={user.id} className="p-3.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between shadow-2xs hover:border-purple-300 transition-colors">
+                  <div className="flex items-center space-x-3 truncate">
+                    <Avatar className="h-9 w-9 border border-purple-300 shrink-0">
+                      {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.fullName} /> : null}
+                      <AvatarFallback className="bg-purple-600 text-white text-xs font-bold">
+                        {getInitials(user.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="truncate">
+                      <span className="font-bold text-xs text-slate-900 dark:text-slate-100 block leading-tight truncate">{user.fullName}</span>
+                      <span className="text-[10px] text-slate-500 font-normal block truncate">{user.title}</span>
+                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold block pt-0.5">🎂 {user.dob || 'Aug 21'}</span>
+                    </div>
                   </div>
+                  {isBirthdayToday ? (
+                    <Button size="sm" onClick={() => handleSendWish(user)} className="text-xs h-8 px-3 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0 gap-1">
+                      <span>Wish</span> <Sparkles className="w-3.5 h-3.5" />
+                    </Button>
+                  ) : (
+                    <Button size="sm" disabled title={`Birthday wishes can only be sent on their actual birthday! (${user.dob})`} className="text-xs h-8 px-2.5 font-semibold bg-slate-200/80 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 rounded-xl shrink-0 gap-1 cursor-not-allowed border border-slate-200 dark:border-slate-800">
+                      <Lock className="w-3 h-3 text-slate-400" /> <span>Not Today</span>
+                    </Button>
+                  )}
                 </div>
-                <Button size="sm" onClick={() => handleSendWish(user)} className="text-xs h-8 px-3 font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-2xs shrink-0 gap-1">
-                  <span>Wish</span> <Sparkles className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

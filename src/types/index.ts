@@ -135,6 +135,11 @@ export interface ChatMessage {
   channelId?: string | null; // e.g. '#general', '#voice-agent'
   text: string;
   timestamp: string;
+  deleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+  originalText?: string;
+  readBy?: string[]; // Array of user IDs who have seen/read the message
 }
 
 export interface AttendanceSession {

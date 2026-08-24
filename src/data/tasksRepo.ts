@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -55,5 +56,8 @@ export const tasksRepo = {
   },
   async updateStatus(id: string, status: TaskStatus) {
     await tasksRepo.update(id, { status });
+  },
+  async delete(id: string) {
+    await deleteDoc(doc(db, PATH, id));
   },
 };

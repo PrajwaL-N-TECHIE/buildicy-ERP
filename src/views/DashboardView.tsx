@@ -11,6 +11,7 @@ import { ProjectManagement } from '@/components/admin/ProjectManagement';
 import { AnalyticsDashboard } from '@/components/admin/AnalyticsDashboard';
 import { AuditLogViewer } from '@/components/admin/AuditLogViewer';
 import { ChatLogsViewer } from '@/components/admin/ChatLogsViewer';
+import { SentEmailsLogViewer } from '@/components/admin/SentEmailsLogViewer';
 import { TeamChatView } from '@/components/chat/TeamChatView';
 import { AttendanceTracker } from '@/components/attendance/AttendanceTracker';
 import { HRHubView } from '@/components/hr/HRHubView';
@@ -32,7 +33,11 @@ export const DashboardView: React.FC = () => {
   const [isTaskFormOpen, setIsTaskFormOpen] = useState<boolean>(false);
 
   if (!currentUser) {
-    return <LoginView />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white text-sm font-medium">
+        Loading workspace…
+      </div>
+    );
   }
 
   const renderActiveTabContent = () => {
@@ -86,6 +91,8 @@ export const DashboardView: React.FC = () => {
         return <ExecutiveOverview />;
       case 'chat-logs':
         return <ChatLogsViewer />;
+      case 'sent-emails':
+        return <SentEmailsLogViewer />;
       case 'audit-logs':
         return <AuditLogViewer />;
       default:
@@ -101,7 +108,7 @@ export const DashboardView: React.FC = () => {
         <div className="space-y-0.5">
           <div className="flex items-center space-x-2">
             <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Company ERP Operations Hub
+              Buildicy ERP Operations Hub
             </h1>
           </div>
           <p className="text-xs text-slate-500 font-normal">

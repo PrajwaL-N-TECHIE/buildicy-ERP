@@ -25,6 +25,8 @@ import {
   LogOut
 } from 'lucide-react';
 
+import { BuildicyLogo } from '@/components/common/BuildicyLogo';
+
 interface SidebarProps {
   activeTab: string;
   onSelectTab: (tab: string) => void;
@@ -45,10 +47,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const submittedCount = tasks.filter(t => t.status === 'Submitted').length;
   const pendingAdminCount = tasks.filter(t => t.status === 'Pending Admin').length;
-
-  const handlePersonaSwitch = (newUserId: string) => {
-    loginAsUser(newUserId);
-  };
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -81,6 +79,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'hr-hub', label: 'Personnel & Employee Hub', icon: Cake },
         ...((isAdmin || isReviewer) ? [{ id: 'project-mgmt', label: 'Project Directory', icon: Building2 }] : []),
         ...(isAdmin ? [
+          { id: 'sent-emails', label: 'Sent Emails Log', icon: MailCheck },
           { id: 'chat-logs', label: 'Chat Compliance Logs', icon: MessageSquare },
           { id: 'audit-logs', label: 'Audit Logs', icon: ShieldAlert }
         ] : [])
@@ -96,19 +95,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* App Logo & Subdomain Badge */}
         <div className="flex items-center justify-between px-2 pt-1">
           <div className="flex items-center space-x-2.5">
-            <div className="relative">
-              <img 
-                src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=80&q=80" 
-                alt="ERP Product Logo" 
-                className="w-8 h-8 rounded-xl object-cover border border-purple-300 shadow-2xs"
-              />
-              <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-600 text-[8px] text-white">
-                <Sparkles className="w-2.5 h-2.5" />
-              </span>
+            <div className="relative flex items-center justify-center">
+              <BuildicyLogo size={36} />
             </div>
             <div>
-              <span className="font-extrabold text-sm text-purple-950 dark:text-slate-100 block tracking-tight">Task Tracker</span>
-              <span className="text-[10px] text-purple-700 dark:text-purple-400 font-semibold uppercase tracking-wider block">Company ERP</span>
+              <span className="font-extrabold text-base text-slate-900 dark:text-slate-100 block tracking-tight">Buildicy</span>
+              <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider block">Enterprise ERP</span>
             </div>
           </div>
 
@@ -117,25 +109,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <X className="w-5 h-5" />
             </button>
           )}
-        </div>
-
-        {/* Role Impersonation Selector */}
-        <div className="px-2 space-y-1">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-            Active Persona
-          </label>
-          <Select value={currentUser.id} onValueChange={handlePersonaSwitch}>
-            <SelectTrigger className="h-9 text-xs border-purple-100 bg-purple-50/50 font-medium text-purple-950 rounded-xl focus:ring-purple-500">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {users.map(u => (
-                <SelectItem key={u.id} value={u.id} className="text-xs font-medium">
-                  {u.fullName} ({u.roleTier})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
         {/* Navigation Group Links with Professional Icon Pack */}

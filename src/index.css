@@ -146,3 +146,68 @@
   color: #f8fafc !important;
   border-color: #334155 !important;
 }
+
+.dark .bg-rose-50,
+.dark .bg-rose-50\/30,
+.dark .bg-rose-50\/40,
+.dark .bg-rose-50\/60,
+.dark .bg-rose-50\/80 {
+  background-color: rgba(76, 5, 25, 0.45) !important;
+  border-color: rgba(159, 18, 57, 0.5) !important;
+  color: #fecdd3 !important;
+}
+
+.dark .bg-amber-50,
+.dark .bg-amber-50\/30,
+.dark .bg-amber-50\/40,
+.dark .bg-amber-50\/60,
+.dark .bg-amber-50\/80 {
+  background-color: rgba(69, 26, 3, 0.45) !important;
+  border-color: rgba(180, 83, 9, 0.5) !important;
+  color: #fde68a !important;
+}
+
+.dark .bg-emerald-50,
+.dark .bg-emerald-50\/30,
+.dark .bg-emerald-50\/40,
+.dark .bg-emerald-50\/60,
+.dark .bg-emerald-50\/80 {
+  background-color: rgba(6, 78, 59, 0.45) !important;
+  border-color: rgba(4, 120, 87, 0.5) !important;
+  color: #a7f3d0 !important;
+}
+
+.dark .bg-sky-50,
+.dark .bg-sky-50\/30,
+.dark .bg-sky-50\/40,
+.dark .bg-sky-50\/60,
+.dark .bg-sky-50\/80 {
+  background-color: rgba(12, 74, 110, 0.45) !important;
+  border-color: rgba(3, 105, 161, 0.5) !important;
+  color: #bae6fd !important;
+}
+
+.dark .bg-indigo-50,
+.dark .bg-indigo-50\/30,
+.dark .bg-indigo-50\/40,
+.dark .bg-indigo-50\/60,
+.dark .bg-indigo-50\/80 {
+  background-color: rgba(30, 27, 75, 0.5) !important;
+  border-color: rgba(67, 56, 202, 0.5) !important;
+  color: #c7d2fe !important;
+}
+
+.dark .text-rose-800,
+.dark .text-rose-700 {
+  color: #fda4af !important;
+}
+
+.dark .text-amber-800,
+.dark .text-amber-700 {
+  color: #fcd34d !important;
+}
+
+.dark .text-emerald-800,
+.dark .text-emerald-700 {
+  color: #6ee7b7 !important;
+}
