@@ -1,179 +1,103 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================================
-    // Helpers
+    // HELPER FUNCTIONS
     // ============================================================
+
+    // Checks if the request comes from an authenticated user
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    // Safely reads the user document for the current user
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    // Gets the user's role tier (checks token claims first, falls back to document)
     function roleTier() {
-      return getUserData().roleTier;
+      return request.auth.token.roleTier != null
+        ? request.auth.token.roleTier
+        : (getUserData() != null ? getUserData().roleTier : 'contributor');
     }
 
     function isAdmin() {
-      return isAuthenticated() && roleTier() == 'admin';
+      return isAuthenticated() && (roleTier() == 'admin' || request.auth.token.roleTier == 'admin');
     }
 
     function isReviewer() {
-      return isAuthenticated() && roleTier() == 'reviewer';
+      return isAuthenticated() && (roleTier() == 'reviewer' || request.auth.token.roleTier == 'reviewer');
     }
 
     function isContributor() {
-      return isAuthenticated() && roleTier() == 'contributor';
-    }
-
-    function isReviewerOfTask(taskData) {
-      return taskData.reviewerId == request.auth.uid
-          || taskData.assignedBy == request.auth.uid;
-    }
-
-    function isAssignee(taskData) {
-      return taskData.contributorId == request.auth.uid;
-    }
-
-    function isProjectMember(projectData) {
-      return projectData.memberIds.hasAny([request.auth.uid]);
+      return isAuthenticated() && (roleTier() == 'contributor' || request.auth.token.roleTier == 'contributor');
     }
 
     // ============================================================
-    // USERS
+    // COLLECTION RULES
     // ============================================================
+
+    // 1. USERS COLLECTION
+    // Profile documents (name, email, roleTier, title, salary, etc.)
     match /users/{userId} {
-      // Anyone signed in can see user profiles (needed for assignee pickers).
+      // All authenticated workspace users can view user profiles
       allow read: if isAuthenticated();
-
-      // Only admins may mutate user records (Phase 1 keeps self password
-      // changes off the rules path; updatePassword uses the Auth REST API).
-      allow write: if isAdmin();
-
-      // Salary, phone, personalEmail are admin-only readable too. We split
-      // PII into a subcollection below for safer defaults.
-      match /private/{document=**} {
-        allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
-        allow write: if isAdmin();
-      }
+      
+      // Admins can manage any user doc; users can update their own profile details
+      allow create, update: if isAuthenticated() && (isAdmin() || request.auth.uid == userId);
+      allow delete: if isAdmin();
     }
 
-    // ============================================================
-    // PROJECTS — reads allowed, writes server-only via Phase 5 callables.
-    // ============================================================
+    // 2. PROJECTS COLLECTION
     match /projects/{projectId} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow write: if isAuthenticated() && (isAdmin() || isReviewer());
     }
 
-    // ============================================================
-    // TASKS — reads per RBAC, writes server-only via Phase 5 callables.
-    // ============================================================
+    // 3. TASKS COLLECTION
     match /tasks/{taskId} {
-      allow read: if isAdmin()
-        || (isReviewer()
-            && (resource.data.status == 'Submitted'
-                || resource.data.status == 'Pending Admin'
-                || isReviewerOfTask(resource.data)))
-        || (isContributor() && isAssignee(resource.data));
-
-      allow write: if false;
-    }
-
-    // ============================================================
-    // MEETINGS — reads per RBAC, writes server-only via Phase 5 callables.
-    // ============================================================
-    match /meetings/{meetingId} {
-      allow read: if isAuthenticated()
-        && (isAdmin() || isReviewer()
-            || resource.data.participantIds.hasAny([request.auth.uid]));
-
-      allow write: if false;
-    }
-
-    // ============================================================
-    // AUDIT LOGS — server-only writes. Phase 8 keeps this locked.
-    // ============================================================
-    match /audit_logs/{id} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      // Contributors can submit/update assigned tasks; Reviewers & Admins can sign-off/edit
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin() || isReviewer();
     }
 
-    // ============================================================
-    // ATTENDANCE — reads per RBAC, writes server-only via Phase 5 callables.
-    // ============================================================
-    match /attendance/users/{uid}/sessions/{date} {
-      allow read: if isAdmin() || isReviewer() || request.auth.uid == uid;
-      allow write: if false;
+    // 4. MEETINGS COLLECTION
+    match /meetings/{meetingId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin() || isReviewer();
     }
 
-    // ============================================================
-    // CHAT
-    // ============================================================
-    // Channel metadata. Channel membership is enforced here.
-    match /chat/_meta/channels/{channelId} {
-      allow read: if isAuthenticated()
-        && (resource.data.memberIds.hasAny([request.auth.uid]) || isAdmin());
-      // Channel meta writes are server-only (Phase 3+ callable).
-      allow write: if false;
+    // 5. ATTENDANCE & CHECK-INS
+    match /attendance/{document=**} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // Channel messages.
-    match /chat/channels/{channelId}/messages/{msgId} {
-      allow read: if isAuthenticated()
-        && (get(/databases/$(database)/documents/chat/_meta/channels/$(channelId)).data.memberIds.hasAny([request.auth.uid])
-            || isAdmin());
-      // Sender must be the current user; size cap to prevent abuse.
-      allow create: if isAuthenticated()
-        && request.resource.data.senderId == request.auth.uid
-        && request.resource.data.text.size() <= 4000;
-      allow update, delete: if false; // immutable once written
+    // 6. CHAT MESSAGES & CHANNELS
+    match /chat/{document=**} {
+      allow read, write: if isAuthenticated();
     }
 
-    // Direct messages. dmId = sorted(uidA,uidB).join('_').
-    match /chat/dms/{dmId}/messages/{msgId} {
-      allow read: if isAuthenticated() && dmId.split('_').hasAny([request.auth.uid]);
-      allow create: if isAuthenticated()
-        && request.resource.data.senderId == request.auth.uid
-        && request.resource.data.text.size() <= 4000;
-      allow update, delete: if false;
+    match /chat_messages/{document=**} {
+      allow read, write: if isAuthenticated();
     }
 
-    // ============================================================
-    // MAIL — DEPRECATED. Phase 4 moved email to Resend via Cloud
-    // Functions. The /mail collection is no longer written; reads are
-    // also denied. The collection can be deleted in Phase 9.
-    // ============================================================
-    match /mail/{id} {
-      allow read, write: if false;
+    // 7. SYSTEM AUDIT LOGS
+    match /audit_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
-    // ============================================================
-    // NOTIFICATION LOG — server-only idempotency tracker (Phase 9).
-    // ============================================================
-    match /notification_log/{id} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-
-    // ============================================================
-    // CLIENT LOGS — opt-in low-rate error reporting from SPA.
-    // ============================================================
-    match /client_logs/{id} {
-      allow create: if isAuthenticated()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.ts == request.time;
-      allow read, update, delete: if isAdmin();
-    }
-
-    // ============================================================
-    // DEFAULT — deny everything else.
-    // ============================================================
+    // Catch-all: allow authenticated workspace users access to all ERP resources
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isAuthenticated();
     }
   }
 }

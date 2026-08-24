@@ -14,7 +14,7 @@ build/
 .env.local
 .env.*.local
 
-# Firebase
+# Firebase & Service Accounts
 .firebase/
 firebase-debug.log
 firebase-debug.*.log
@@ -22,7 +22,12 @@ firestore-debug.log
 ui-debug.log
 functions/service-account*.json
 functions/.runtimeconfig.json
+functions/.env
 functions/.env.local
+*adminsdk*.json
+service-account*.json
+*.pem
+*.key
 
 # Vercel
 .vercel/
@@ -58,4 +63,3 @@ migration-backups/
 
 # Local tool directories
 .commandcode/
-

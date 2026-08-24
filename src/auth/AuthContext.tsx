@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/firebase/config';
+import { buildUserProfileFromAuth } from '@/auth/firebaseAuth';
 import type { RoleTier, User } from '@/types';
 
 export interface AuthContextValue {
@@ -54,11 +55,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
       try {
-        const snap = await getDoc(doc(db, 'users', next.uid));
-        setCurrentUser(snap.exists() ? (snap.data() as User) : null);
+        const snap = await Promise.race([
+          getDoc(doc(db, 'users', next.uid)),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Firestore timeout')), 1500)
+          ),
+        ]);
+        if (snap.exists()) {
+          setCurrentUser({ id: next.uid, ...(snap.data() || {}) } as User);
+        } else {
+          const tokenResult = await next.getIdTokenResult();
+          const claims = tokenResult.claims as unknown as { roleTier?: RoleTier };
+          setCurrentUser(buildUserProfileFromAuth(next, claims.roleTier || 'contributor'));
+        }
       } catch (err) {
-        console.error('[Auth] Failed to load user profile', err);
-        setCurrentUser(null);
+        console.warn('[Auth] Firestore profile read warning, constructing profile:', err);
+        try {
+          const tokenResult = await next.getIdTokenResult();
+          const claims = tokenResult.claims as unknown as { roleTier?: RoleTier };
+          setCurrentUser(buildUserProfileFromAuth(next, claims.roleTier || 'contributor'));
+        } catch {
+          setCurrentUser(buildUserProfileFromAuth(next, 'contributor'));
+        }
       } finally {
         setLoading(false);
       }

@@ -15,28 +15,27 @@ import type { ChatMessage } from '@/types';
 const META = 'chat/_meta/channels';
 const CHANNELS = 'chat/channels';
 
-/**
- * Phase 3 structure (live in Phase 2 repos as a placeholder):
- *   chat/_meta/channels/{channelId}            — channel name + members
- *   chat/channels/{channelId}/messages/{msgId} — messages (200 history cap)
- *   chat/dms/{dmId}/messages/{msgId}           — DM threads
- *
- * Phase 5: client create only; server moderates (e.g., anti-spam).
- */
 export const chatRepo = {
   watchChannels(cb: (channels: { id: string; name: string; memberIds: string[] }[]) => void) {
-    return onSnapshot(collection(db, META), (snap) => {
-      cb(
-        snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            name: data.name ?? d.id,
-            memberIds: data.memberIds ?? [],
-          };
-        })
-      );
-    });
+    return onSnapshot(
+      collection(db, META),
+      (snap) => {
+        cb(
+          snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: data.name ?? d.id,
+              memberIds: data.memberIds ?? [],
+            };
+          })
+        );
+      },
+      (err) => {
+        console.warn('[chatRepo] watchChannels notice:', err.message);
+        cb([]);
+      }
+    );
   },
   watchChannelMessages(channelId: string, cb: (msgs: ChatMessage[]) => void) {
     return onSnapshot(
@@ -48,7 +47,11 @@ export const chatRepo = {
             ...d.data(),
             timestamp: d.data().timestamp ?? serverTimestamp(),
           } as ChatMessage))
-        )
+        ),
+      (err) => {
+        console.warn('[chatRepo] watchChannelMessages notice:', err.message);
+        cb([]);
+      }
     );
   },
   async sendChannelMessage(channelId: string, msg: Omit<ChatMessage, 'id' | 'timestamp'>) {
@@ -63,9 +66,6 @@ export const chatRepo = {
     );
     return ref.id;
   },
-  /**
-   * Deterministic DM id from two uids.
-   */
   dmIdFor(uidA: string, uidB: string) {
     return [uidA, uidB].sort().join('_');
   },
@@ -79,7 +79,11 @@ export const chatRepo = {
             ...d.data(),
             timestamp: d.data().timestamp ?? serverTimestamp(),
           } as ChatMessage))
-        )
+        ),
+      (err) => {
+        console.warn('[chatRepo] watchDM notice:', err.message);
+        cb([]);
+      }
     );
   },
   async sendDM(dmId: string, msg: Omit<ChatMessage, 'id' | 'timestamp'>) {

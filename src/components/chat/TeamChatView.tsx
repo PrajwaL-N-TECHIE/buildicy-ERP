@@ -35,10 +35,10 @@ interface ChannelItem {
 }
 
 const INITIAL_CHANNELS: ChannelItem[] = [
-  { id: '#general', name: 'general-announcements', description: 'Company-wide announcements & sprint updates', memberIds: ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8', 'user-9'] },
-  { id: '#voice-agent', name: 'voice-agent-squad', description: 'Voice AI Engine project team chat', memberIds: ['user-1', 'user-2', 'user-3', 'user-5', 'user-6'] },
-  { id: '#markeee', name: 'markeee-creative', description: 'Markeee design & copy team chat', memberIds: ['user-1', 'user-2', 'user-3', 'user-4', 'user-7', 'user-8'] },
-  { id: '#bizbrain', name: 'bizbrain-reporting', description: 'Bizbrain reporting engine dev chat', memberIds: ['user-1', 'user-2', 'user-4', 'user-9'] }
+  { id: '#general', name: 'general-announcements', description: 'Company-wide announcements & sprint updates', memberIds: [] },
+  { id: '#voice-agent', name: 'voice-agent-squad', description: 'Voice AI Engine project team chat', memberIds: [] },
+  { id: '#markeee', name: 'markeee-creative', description: 'Markeee design & copy team chat', memberIds: [] },
+  { id: '#bizbrain', name: 'bizbrain-reporting', description: 'Bizbrain reporting engine dev chat', memberIds: [] }
 ];
 
 const EMOJI_PACKS = [

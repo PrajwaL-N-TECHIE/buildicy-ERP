@@ -211,25 +211,13 @@ export const HRHubView: React.FC = () => {
 
   // Helper to filter users by birthday criteria
   const getFilteredBirthdayUsers = () => {
-    const currentMonth = 8; // August
-    const currentDay = 21;
-
-    const fallbackDOBs: { [id: string]: string } = {
-      'user-1': '1998-08-21',
-      'user-2': '1998-08-25',
-      'user-3': '2000-08-25',
-      'user-4': '2001-03-10',
-      'user-5': '2003-09-02',
-      'user-6': '2002-08-28',
-      'user-7': '2003-08-28',
-      'user-8': '2002-09-15',
-      'user-9': '2001-08-28'
-    };
-
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
     return users.filter(u => {
       if (birthdayFilter === 'all') return true;
-
-      const dobStr = u.dob || fallbackDOBs[u.id] || '1999-08-21';
+      if (!u.dob) return false;
+      const dobStr = u.dob;
       
       let month = 8;
       let day = 21;
