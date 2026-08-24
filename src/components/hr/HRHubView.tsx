@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { OrgTreeViewer } from '@/components/admin/OrgTreeViewer';
-import { sendWelcomeMessageToAll, sendWelcomeMessageToUser } from '@/firebase/notifications';
+import { sendWelcomeMessageToAll, sendWelcomeMessageToUser, hasWelcomeBeenSentToUser } from '@/firebase/notifications';
 import { 
   Cake, 
   Gift, 
@@ -49,6 +49,15 @@ export const HRHubView: React.FC = () => {
 
   const handleSendWelcomeToSingleUser = async (targetUser: User) => {
     if (!currentUser || sendingUserWelcomeId) return;
+
+    if (hasWelcomeBeenSentToUser(targetUser)) {
+      toast.warning(
+        'Welcome Already Sent ✉️',
+        `Welcome message was already sent to ${targetUser.fullName} (${targetUser.email}). Welcome messages are limited to once per member.`
+      );
+      return;
+    }
+
     setSendingUserWelcomeId(targetUser.id);
     try {
       const res = await sendWelcomeMessageToUser(targetUser, currentUser);
@@ -61,6 +70,7 @@ export const HRHubView: React.FC = () => {
       if (res && res.success === false) {
         toast.error('Resend Mail Error', res.error || `Could not send email to ${targetUser.email}`);
       } else {
+        await updateUser(targetUser.id, { welcomeSent: true, welcomeSentAt: new Date().toISOString() });
         toast.success('Welcome Email Dispatched! 🚀', `Special welcome message dispatched to ${targetUser.fullName} (${targetUser.email}) via Resend API.`);
       }
     } catch (err: any) {
@@ -556,17 +566,27 @@ export const HRHubView: React.FC = () => {
                           )}
 
                           {/* Individual Welcome Message Button for each user row */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleSendWelcomeToSingleUser(u)}
-                            disabled={sendingUserWelcomeId === u.id}
-                            className="h-7 px-2.5 text-[10px] font-bold border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-lg gap-1 shrink-0"
-                            title={`Send individual welcome email to ${u.fullName} (${u.email}) via Resend`}
-                          >
-                            <Mail className="w-3 h-3 text-purple-600" />
-                            <span>{sendingUserWelcomeId === u.id ? 'Sending...' : 'Send Welcome'}</span>
-                          </Button>
+                          {hasWelcomeBeenSentToUser(u) ? (
+                            <span 
+                              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-not-allowed shrink-0"
+                              title={`Welcome email was already sent to ${u.fullName} (${u.email}) - Limited to once per member.`}
+                            >
+                              <UserCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                              <span>Welcome Sent</span>
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSendWelcomeToSingleUser(u)}
+                              disabled={sendingUserWelcomeId === u.id}
+                              className="h-7 px-2.5 text-[10px] font-bold border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-lg gap-1 shrink-0"
+                              title={`Send individual welcome email to ${u.fullName} (${u.email}) via Resend (Single-send limit)`}
+                            >
+                              <Mail className="w-3 h-3 text-purple-600" />
+                              <span>{sendingUserWelcomeId === u.id ? 'Sending...' : 'Send Welcome'}</span>
+                            </Button>
+                          )}
 
                           {isAdmin && (
                             <Button 

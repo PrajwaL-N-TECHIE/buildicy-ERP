@@ -47,6 +47,8 @@ export interface User {
   phoneNumber?: string;
   personalEmail?: string;
   address?: string;
+  welcomeSent?: boolean;
+  welcomeSentAt?: string;
 }
 
 export interface ProjectDeadline {

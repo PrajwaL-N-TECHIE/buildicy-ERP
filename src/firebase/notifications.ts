@@ -487,12 +487,32 @@ export const sendWelcomeMessageToAll = async (
   return { count };
 };
 
+export const hasWelcomeBeenSentToUser = (user: User | string): boolean => {
+  const email = typeof user === 'string' ? user : user.email;
+  if (typeof user !== 'string' && user.welcomeSent) return true;
+  if (!email) return false;
+  const notifications = getStoredNotifications();
+  return notifications.some(
+    (n) =>
+      n.triggerEvent === 'WELCOME_MESSAGE' &&
+      n.to.some((recipientEmail) => recipientEmail.toLowerCase() === email.toLowerCase())
+  );
+};
+
 export const sendWelcomeMessageToUser = async (
   user: User,
   sender: User
 ): Promise<{ success: boolean; error?: string }> => {
   if (!user.email || !user.email.includes('@')) {
     return { success: false, error: 'User does not have a valid email address.' };
+  }
+
+  // ENFORCE SINGLE DISPATCH RESTRICTION
+  if (hasWelcomeBeenSentToUser(user)) {
+    return {
+      success: false,
+      error: `Welcome message has already been dispatched to ${user.fullName} (${user.email}). Welcome messages can only be sent once per member.`
+    };
   }
 
   const html = buildEmailTemplate(
