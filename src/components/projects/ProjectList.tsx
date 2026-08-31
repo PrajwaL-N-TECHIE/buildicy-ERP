@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 import { useToast } from '@/context/ToastContext';
+import { SEED_USERS } from '@/firebase/config';
 
 export const ProjectList: React.FC = () => {
   const toast = useToast();
@@ -62,7 +63,8 @@ export const ProjectList: React.FC = () => {
   const handleOpenCreateProject = () => {
     setEditingProjId(null);
     setProjectName('');
-    setSelectedMemberIds(users.map(u => u.id));
+    const availableUsers = users && users.length > 0 ? users : SEED_USERS;
+    setSelectedMemberIds(availableUsers.map(u => u.id));
     setIsProjectModalOpen(true);
   };
 
@@ -412,42 +414,46 @@ export const ProjectList: React.FC = () => {
             </div>
 
             <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-purple-600" /> Select Teammates ({selectedMemberIds.length}/{users.length} assigned)
-                </Label>
-                <div className="flex items-center space-x-2">
-                  <button 
-                    type="button" 
-                    onClick={() => setSelectedMemberIds(users.map(u => u.id))} 
-                    className="text-xs font-semibold text-purple-600 hover:text-purple-800 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 transition-colors"
-                  >
-                    Select All
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setSelectedMemberIds([])} 
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
-                  >
-                    Clear All
-                  </button>
-                </div>
-              </div>
+              {(() => {
+                const displayUsers = users && users.length > 0 ? users : SEED_USERS;
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <Users className="w-4 h-4 text-purple-600" /> Select Teammates ({selectedMemberIds.length}/{displayUsers.length} assigned)
+                      </Label>
+                      <div className="flex items-center space-x-2">
+                        <button 
+                          type="button" 
+                          onClick={() => setSelectedMemberIds(displayUsers.map(u => u.id))} 
+                          className="text-xs font-semibold text-purple-600 hover:text-purple-800 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 transition-colors"
+                        >
+                          Select All
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => setSelectedMemberIds([])} 
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    </div>
 
-              {/* Scrollable spacious list of team members */}
-              <div className="max-h-72 sm:max-h-80 overflow-y-auto border border-slate-200 rounded-2xl p-2.5 space-y-2 bg-slate-50/80">
-                {users.map(u => {
-                  const isSelected = selectedMemberIds.includes(u.id);
-                  return (
-                    <div
-                      key={u.id}
-                      onClick={() => handleToggleMember(u.id)}
-                      className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
-                        isSelected 
-                          ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-semibold' 
-                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100/80'
-                      }`}
-                    >
+                    {/* Scrollable spacious list of team members */}
+                    <div className="max-h-72 sm:max-h-80 overflow-y-auto border border-slate-200 rounded-2xl p-2.5 space-y-2 bg-slate-50/80">
+                      {displayUsers.map(u => {
+                        const isSelected = selectedMemberIds.includes(u.id);
+                        return (
+                          <div
+                            key={u.id}
+                            onClick={() => handleToggleMember(u.id)}
+                            className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
+                              isSelected 
+                                ? 'bg-purple-50/90 border-purple-300 text-purple-950 shadow-2xs font-semibold' 
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100/80'
+                            }`}
+                          >
                       <div className="flex items-center space-x-3">
                         <Avatar className="h-8 w-8 border border-purple-200 shrink-0">
                           {u.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={u.fullName} /> : null}
@@ -472,7 +478,10 @@ export const ProjectList: React.FC = () => {
                   );
                 })}
               </div>
-            </div>
+            </>
+          );
+        })()}
+      </div>
 
             <DialogFooter className="pt-3 flex items-center justify-end space-x-3 border-t border-slate-100">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsProjectModalOpen(false)} className="h-10 px-5 text-xs font-semibold rounded-xl border-slate-300">

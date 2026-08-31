@@ -163,10 +163,16 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [users, setUsers] = useState<User[]>(() => {
+    const stored = getStoredUsers();
+    return stored.length > 0 ? stored : SEED_USERS;
+  });
+  const [projects, setProjects] = useState<Project[]>(() => {
+    const stored = getStoredProjects();
+    return stored.length > 0 ? stored : SEED_PROJECTS;
+  });
+  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks());
+  const [meetings, setMeetings] = useState<Meeting[]>(() => getStoredMeetings());
   const [notifications, setNotifications] = useState<MailNotification[]>(() => getStoredNotifications());
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
@@ -240,11 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (USE_FIRESTORE_DATA) {
       if (USE_FIREBASE_AUTH && !currentUserId) {
-        setUsers([]);
-        setProjects([]);
-        setTasks([]);
-        setMeetings([]);
-        setAuditLogs([]);
+        // Do not wipe baseline user/project states while auth initializes
         return;
       }
 
