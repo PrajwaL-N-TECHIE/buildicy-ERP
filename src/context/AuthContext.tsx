@@ -472,7 +472,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithCredentials = async (email: string, pass: string): Promise<boolean> => {
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. Candidate user lookup prioritizing active reactive state from Firestore
+    // 1. Fetch custom password map from localStorage as primary fallback for user-modified passwords
+    let customPassword = '';
+    try {
+      const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
+      customPassword = customPasswords[cleanEmail] || '';
+    } catch {
+      customPassword = '';
+    }
+
+    // 2. Candidate user lookup prioritizing active reactive state from Firestore
     const activeUser = users.find(u => u.email.toLowerCase() === cleanEmail);
     const stored = getStoredUsers();
     const storedMatch = stored.find(u => u.email.toLowerCase() === cleanEmail);
@@ -487,20 +496,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!targetUser) return false;
 
-    // 2. Fetch custom password map from localStorage as secondary fallback
-    let customPassword = '';
-    try {
-      const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
-      customPassword = customPasswords[cleanEmail] || '';
-    } catch {
-      customPassword = '';
-    }
-
-    // Direct password precedence: Firestore/State password > LocalStorage Custom Password > Default Tier Seed Password
-    const expectedPassword = targetUser.password || customPassword || (
-      targetUser.roleTier === 'admin' ? 'admin@123' :
-      targetUser.roleTier === 'reviewer' ? 'reviewer@123' : 'intern@123'
-    );
+    // Direct password precedence: LocalStorage Custom Password > Active/Firestore User password > Stored User password > Default Tier Seed Password
+    const expectedPassword =
+      customPassword ||
+      (activeUser?.password && activeUser.password !== seedMatch?.password ? activeUser.password : '') ||
+      (storedMatch?.password && storedMatch.password !== seedMatch?.password ? storedMatch.password : '') ||
+      targetUser.password ||
+      (targetUser.roleTier === 'admin' ? 'admin@123' :
+       targetUser.roleTier === 'reviewer' ? 'reviewer@123' : 'intern@123');
 
     // 3. Try Firebase Auth SDK if configured
     if (USE_FIREBASE_AUTH) {
@@ -514,7 +517,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAuthLoading(false);
         return true;
       } catch (err) {
-        // Firebase Auth login notice, fall through to database password validation below
+        // Firebase Auth login notice, fall through to database & local password validation below
       }
     }
 
@@ -550,21 +553,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let updatedInFirebase = false;
 
-    if (USE_FIREBASE_AUTH && auth.currentUser) {
-      try {
-        await updatePassword(auth.currentUser, newPass);
-        updatedInFirebase = true;
-      } catch (err: any) {
-        console.warn('[AuthContext] Firebase Auth updatePassword notice:', err);
-        if (err?.code === 'auth/requires-recent-login') {
-          throw new Error('For security reasons, Firebase requires you to log out and log back in before changing your password.');
-        }
-        if (err?.code === 'auth/weak-password') {
-          throw new Error('Password should be at least 6 characters long.');
-        }
-      }
-    }
-
+    // 1. Immediately persist custom password in localStorage map
     if (currentUser.email) {
       try {
         const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
@@ -575,7 +564,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    // 2. Try Firebase Auth SDK password update if active session exists
+    if (USE_FIREBASE_AUTH && auth.currentUser) {
+      try {
+        await updatePassword(auth.currentUser, newPass);
+        updatedInFirebase = true;
+      } catch (err: any) {
+        console.warn('[AuthContext] Firebase Auth updatePassword notice:', err?.message || err);
+      }
+    }
+
+    // 3. Persist password update to Firestore & local state
     await updateUser(currentUser.id, { password: newPass });
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, password: newPass } : u));
+    
+    const stored = getStoredUsers();
+    const updatedStored = stored.map(u => u.id === currentUser.id ? { ...u, password: newPass } : u);
+    saveUsers(updatedStored);
+
     addAuditLog('PASSWORD_CHANGED', `User: ${currentUser.fullName}`,
       updatedInFirebase ? `Updated password via Firebase Auth and database.` : `Updated password in ERP database.`);
 
