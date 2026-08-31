@@ -447,12 +447,6 @@ export const TaskList: React.FC<TaskListProps> = ({ onOpenCreateTask }) => {
                         <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
                           <span>
                             {task.status === 'Not Started' || task.status === 'In Progress'
-                              ? `${task.hours} hrs allocated`
-                              : `${task.hours} hrs logged`}
-                          </span>
-                          <span>&bull;</span>
-                          <span>
-                            {task.status === 'Not Started' || task.status === 'In Progress'
                               ? `Assigned ${new Date(task.createdAt || task.taskDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
                               : `Logged ${new Date(task.updatedAt || task.taskDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
                           </span>

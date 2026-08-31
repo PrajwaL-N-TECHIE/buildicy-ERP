@@ -13,13 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Users, Plus, ShieldCheck, UserCheck, Mail, GitBranch, Table as TableIcon, Edit3, Calendar, DollarSign, Key, Cake } from 'lucide-react';
 
-import { sendWelcomeMessageToUser, hasWelcomeBeenSentToUser } from '@/firebase/notifications';
 import { useToast } from '@/context/ToastContext';
 
 export const PeopleManagement: React.FC = () => {
   const toast = useToast();
   const { currentUser, users, projects, tasks, attendanceRecords, addUser, updateUser, toggleUserActive, addAuditLog } = useAuth();
-  const [sendingUserWelcomeId, setSendingUserWelcomeId] = useState<string | null>(null);
 
   const [viewMode, setViewMode] = useState<'directory' | 'org-tree'>('directory');
   
@@ -111,40 +109,6 @@ export const PeopleManagement: React.FC = () => {
       setEditSelectedProjects(editSelectedProjects.filter(id => id !== projId));
     } else {
       setEditSelectedProjects([...editSelectedProjects, projId]);
-    }
-  };
-
-  const handleSendWelcomeToSingleUser = async (targetUser: User) => {
-    if (!currentUser || sendingUserWelcomeId) return;
-
-    if (hasWelcomeBeenSentToUser(targetUser)) {
-      toast.warning(
-        'Welcome Already Sent ✉️',
-        `Welcome message was already sent to ${targetUser.fullName} (${targetUser.email}). Welcome messages are limited to once per member.`
-      );
-      return;
-    }
-
-    setSendingUserWelcomeId(targetUser.id);
-    try {
-      const res = await sendWelcomeMessageToUser(targetUser, currentUser);
-      addAuditLog(
-        'WELCOME_EMAIL_SENT',
-        `User: ${targetUser.fullName}`,
-        `Individual welcome email dispatched to ${targetUser.email} via Resend Mail Gateway by ${currentUser.fullName}.`
-      );
-
-      if (res && res.success === false) {
-        toast.error('Resend Email Error', res.error || `Failed to send email to ${targetUser.email}`);
-      } else {
-        await updateUser(targetUser.id, { welcomeSent: true, welcomeSentAt: new Date().toISOString() });
-        toast.success('Welcome Email Dispatched! 🚀', `Welcome email sent to ${targetUser.fullName} (${targetUser.email}) via Resend API.`);
-      }
-    } catch (err: any) {
-      console.error('Error sending individual welcome email:', err);
-      toast.error('Email Failed', err?.message || 'Unexpected exception sending welcome email.');
-    } finally {
-      setSendingUserWelcomeId(null);
     }
   };
 
@@ -339,29 +303,6 @@ export const PeopleManagement: React.FC = () => {
                         {u.active ? 'Active' : 'Inactive'}
                       </span>
 
-                      {/* Send Welcome Email Button / Welcome Sent Badge */}
-                      {hasWelcomeBeenSentToUser(u) ? (
-                        <span 
-                          className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed shrink-0"
-                          title={`Welcome email was already sent to ${u.fullName} (${u.email}) - Limited to once per member.`}
-                        >
-                          <UserCheck className="w-3 h-3 text-emerald-600" />
-                          <span>Welcome Sent</span>
-                        </span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleSendWelcomeToSingleUser(u)}
-                          disabled={sendingUserWelcomeId === u.id}
-                          className="h-7 px-2.5 text-[10px] font-bold border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-lg gap-1 shrink-0"
-                          title={`Send welcome email to ${u.fullName} (${u.email}) via Resend (Single-send limit)`}
-                        >
-                          <Mail className="w-3 h-3 text-purple-600" />
-                          <span>{sendingUserWelcomeId === u.id ? 'Sending...' : 'Send Welcome'}</span>
-                        </Button>
-                      )}
-
                       {isAdmin && (
                         <Button 
                           variant="ghost" 
@@ -408,7 +349,7 @@ export const PeopleManagement: React.FC = () => {
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-900">First Name</Label>
                 <Input 
-                  placeholder="e.g. Rajeshwari"
+                  placeholder="e.g. Rajeswari"
                   value={firstName}
                   onChange={e => setFirstName(e.target.value)}
                   className="h-9 text-xs border-slate-300 rounded-xl font-medium"
@@ -431,7 +372,7 @@ export const PeopleManagement: React.FC = () => {
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-900">Login Username</Label>
                 <Input 
-                  placeholder="rajeshwari.sde"
+                  placeholder="rajeswari.sde"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
                   className="h-9 text-xs border-slate-300 rounded-xl font-medium"
@@ -457,7 +398,7 @@ export const PeopleManagement: React.FC = () => {
               <Label className="text-xs font-bold text-slate-900">Work Email Address</Label>
               <Input 
                 type="email"
-                placeholder="rajeshwari@company.com"
+                placeholder="rajeswari.m.buildicy@gmail.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 className="h-9 text-xs border-slate-300 rounded-xl font-medium"

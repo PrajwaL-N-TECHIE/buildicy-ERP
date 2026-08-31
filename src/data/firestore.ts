@@ -67,3 +67,20 @@ export function makeConverter<T extends { id: string }>(): FirestoreDataConverte
 export function docAt<T = unknown>(path: string, id: string) {
   return doc(db, path, id) as ReturnType<typeof doc> & { __type?: T };
 }
+
+/**
+ * Recursively strips `undefined` values from an object before sending to Firestore.
+ */
+export function cleanForFirestore<T extends Record<string, any>>(obj: T): T {
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        cleaned[key] = cleanForFirestore(val);
+      } else {
+        cleaned[key] = val;
+      }
+    }
+  }
+  return cleaned as T;
+}

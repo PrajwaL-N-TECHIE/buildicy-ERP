@@ -195,14 +195,14 @@ export const MeetingList: React.FC = () => {
 
       {/* Schedule Meeting Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md p-6 bg-white border border-slate-200 shadow-xl rounded-2xl">
-          <DialogHeader className="pb-3 border-b border-slate-100 pr-6">
-            <div className="flex items-center space-x-2.5">
-              <div className="p-2.5 bg-purple-100 text-purple-700 rounded-xl">
-                <Video className="w-5 h-5" />
+        <DialogContent className="sm:max-w-xl md:max-w-2xl w-[92vw] max-h-[90vh] flex flex-col p-6 bg-white border border-slate-200 shadow-2xl rounded-2xl">
+          <DialogHeader className="pb-4 border-b border-slate-100 pr-6 shrink-0">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-purple-100 text-purple-700 rounded-xl">
+                <Video className="w-6 h-6" />
               </div>
               <div>
-                <DialogTitle className="text-base font-bold text-slate-900">
+                <DialogTitle className="text-lg font-bold text-slate-900">
                   Schedule Team Meeting
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500 font-normal">
@@ -212,24 +212,24 @@ export const MeetingList: React.FC = () => {
             </div>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4 py-2 text-xs">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-4 py-2 text-xs">
             
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-900">Meeting Title</Label>
+              <Label className="text-sm font-bold text-slate-900">Meeting Title</Label>
               <Input 
                 placeholder="e.g., Voice Agent Weekly Sprint Review"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                className="h-9 text-xs border-slate-300 rounded-xl font-medium"
+                className="h-10 text-sm border-slate-300 rounded-xl font-medium px-3.5"
                 required
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-900">Associated Project</Label>
                 <Select value={projectId} onValueChange={setProjectId}>
-                  <SelectTrigger className="h-9 text-xs border-slate-300 rounded-xl font-medium">
+                  <SelectTrigger className="h-10 text-xs border-slate-300 rounded-xl font-medium">
                     <SelectValue placeholder="Select Project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -249,7 +249,7 @@ export const MeetingList: React.FC = () => {
                   type="datetime-local"
                   value={scheduledAt}
                   onChange={e => setScheduledAt(e.target.value)}
-                  className="h-9 text-xs border-slate-300 rounded-xl font-medium"
+                  className="h-10 text-xs border-slate-300 rounded-xl font-medium"
                   required
                 />
               </div>
@@ -261,7 +261,7 @@ export const MeetingList: React.FC = () => {
                 placeholder="Google Meet link or Conference Room 2"
                 value={location}
                 onChange={e => setLocation(e.target.value)}
-                className="h-9 text-xs border-slate-300 rounded-xl font-medium"
+                className="h-10 text-xs border-slate-300 rounded-xl font-medium"
                 required
               />
             </div>
@@ -277,31 +277,65 @@ export const MeetingList: React.FC = () => {
             </div>
 
             {/* Participants Selector */}
-            <div className="space-y-1.5 pt-1 border-t border-slate-100">
-              <Label className="text-xs font-bold text-slate-900">
-                Select Invitees ({selectedParticipants.length} selected)
-              </Label>
-              <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                {users.map(u => (
-                  <label key={u.id} className="flex items-center space-x-2 p-1.5 bg-slate-50 hover:bg-purple-50 rounded-lg cursor-pointer border border-slate-200 text-xs">
-                    <input 
-                      type="checkbox"
-                      checked={selectedParticipants.includes(u.id)}
-                      onChange={() => handleToggleParticipant(u.id)}
-                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    <span className="font-semibold text-slate-900">{u.fullName}</span>
-                    <span className="text-[10px] text-slate-500 font-normal">({u.title})</span>
-                  </label>
-                ))}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-purple-600" /> Select Invitees ({selectedParticipants.length}/{users.length} selected)
+                </Label>
+                <div className="flex items-center space-x-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setSelectedParticipants(users.map(u => u.id))} 
+                    className="text-xs font-semibold text-purple-600 hover:text-purple-800 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200"
+                  >
+                    Select All
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setSelectedParticipants([])} 
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {users.map(u => {
+                  const isChecked = selectedParticipants.includes(u.id);
+                  return (
+                    <label 
+                      key={u.id} 
+                      className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer border transition-colors ${
+                        isChecked ? 'bg-purple-50 border-purple-300 text-purple-950 font-bold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <input 
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleParticipant(u.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                        />
+                        <div>
+                          <div className="text-xs sm:text-sm font-bold">{u.fullName}</div>
+                          <div className="text-[11px] text-slate-500 font-normal">{u.email} ({u.title})</div>
+                        </div>
+                      </div>
+                      <Badge variant={isChecked ? 'purple' : 'outline'} className="text-xs">
+                        {isChecked ? 'Invited' : '+ Add'}
+                      </Badge>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
-            <DialogFooter className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100">
-              <Button type="button" variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} className="h-9 px-4 text-xs font-semibold rounded-xl border-slate-300">
+            <DialogFooter className="pt-3 flex items-center justify-end space-x-3 border-t border-slate-100 shrink-0">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} className="h-10 px-5 text-xs font-semibold rounded-xl border-slate-300">
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={isSubmitting || !title.trim() || selectedParticipants.length === 0} className="h-9 px-5 text-xs font-bold rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-md">
+              <Button type="submit" size="sm" disabled={isSubmitting || !title.trim() || selectedParticipants.length === 0} className="h-10 px-6 text-xs font-bold rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-md">
                 {isSubmitting ? 'Scheduling...' : 'Dispatch Meeting Invites'}
               </Button>
             </DialogFooter>

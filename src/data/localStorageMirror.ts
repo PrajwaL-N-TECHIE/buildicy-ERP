@@ -12,7 +12,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/firebase/config';
 import { USE_FIRESTORE_DATA } from './firestore';
 
-type Collections = 'users' | 'projects' | 'tasks' | 'meetings' | 'audit_logs';
+type Collections = 'users' | 'projects' | 'tasks' | 'meetings' | 'audit_logs' | 'leave_requests';
 
 const LS_KEY: Record<Collections, string> = {
   users: 'erp_users',
@@ -20,6 +20,7 @@ const LS_KEY: Record<Collections, string> = {
   tasks: 'erp_tasks',
   meetings: 'erp_meetings',
   audit_logs: 'erp_audit_logs',
+  leave_requests: 'erp_leave_requests',
 };
 
 export function writeThrough<T extends { id: string }>(

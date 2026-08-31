@@ -1,38 +1,61 @@
 import {
   arrayUnion,
+  collection,
   doc,
   onSnapshot,
-  serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
 import { db } from '@/firebase/config';
 import type { AttendanceRecord, AttendanceSession } from '@/types';
 
 const BASE = 'attendance/users';
+const COLLECTION_PATH = 'attendance_records';
 
-/**
- * Phase 3 structure: attendance/{uid}/sessions/{YYYY-MM-DD}
- * One doc per user per day; multi-session support lives inside the array.
- */
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 export const attendanceRepo = {
+  watchAllToday(date: string, cb: (records: AttendanceRecord[]) => void) {
+    return onSnapshot(
+      collection(db, COLLECTION_PATH),
+      (snap) => {
+        const records = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AttendanceRecord));
+        cb(records);
+      },
+      (err) => {
+        console.warn('[attendanceRepo] watchAllToday notice:', err.message);
+      }
+    );
+  },
+  async upsertRecord(rec: AttendanceRecord) {
+    try {
+      await setDoc(doc(db, COLLECTION_PATH, rec.id), rec, { merge: true });
+    } catch (err: any) {
+      console.warn('[attendanceRepo] upsertRecord notice:', err?.message || err);
+    }
+  },
   watchDay(uid: string, date: string, cb: (rec: AttendanceRecord | null) => void) {
-    return onSnapshot(doc(db, BASE, uid, 'sessions', date), (snap) => {
-      cb(
-        snap.exists()
-          ? ({ id: snap.id, userId: uid, date, ...snap.data() } as AttendanceRecord)
-          : null
-      );
-    });
+    return onSnapshot(
+      doc(db, BASE, uid, 'sessions', date),
+      (snap) => {
+        cb(
+          snap.exists()
+            ? ({ id: snap.id, userId: uid, date, ...snap.data() } as AttendanceRecord)
+            : null
+        );
+      },
+      (err) => {
+        console.warn('[attendanceRepo] watchDay notice:', err.message);
+        cb(null);
+      }
+    );
   },
   async checkIn(uid: string) {
     const date = todayIso();
     const session: AttendanceSession = {
       id: 'sess-' + Date.now(),
-      checkInTime: new Date().toISOString(),
+      checkInTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       sessionStartTimestamp: new Date().toISOString(),
     };
     await setDoc(
@@ -47,14 +70,8 @@ export const attendanceRepo = {
       { merge: true }
     );
   },
-  /**
-   * Closes the most recent open session. Phase 5 will move this to a
-   * callable function so duration math happens server-side.
-   */
   async checkOut(uid: string) {
     const date = todayIso();
-    // For Phase 2 we just mark the day checked_out; Phase 5 closes the
-    // session explicitly via callable.
     await setDoc(
       doc(db, BASE, uid, 'sessions', date),
       { status: 'checked_out' },

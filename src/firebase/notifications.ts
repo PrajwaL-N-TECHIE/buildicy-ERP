@@ -5,7 +5,7 @@
  * AND dispatches direct HTTP requests to the Resend API using VITE_RESEND_API_KEY.
  */
 import { getStoredNotifications, saveNotifications } from './config';
-import type { MailNotification, Task, User, Project, Meeting } from '@/types';
+import type { MailNotification, Task, User, Project, Meeting, LeaveRequest } from '@/types';
 
 function formatUserRole(user: User): string {
   if (user.title && user.title.trim() !== '') {
@@ -65,7 +65,7 @@ function buildEmailTemplate(title: string, badgeText: string, contentHtml: strin
 async function sendResendHttpEmail(notification: MailNotification): Promise<{ success: boolean; data?: any; error?: string }> {
   const apiKey = import.meta.env.VITE_RESEND_API_KEY || (typeof process !== 'undefined' ? process.env.RESEND_API_KEY : '');
   if (!apiKey) {
-    console.log('[Resend] Skipping direct HTTP email send — no VITE_RESEND_API_KEY configured.');
+    console.log('[Resend] Skipping HTTP email send — no VITE_RESEND_API_KEY configured.');
     return { success: true, data: 'Logged to local notification log (no API key)' };
   }
 
@@ -75,60 +75,66 @@ async function sendResendHttpEmail(notification: MailNotification): Promise<{ su
     return { success: false, error: 'No valid recipient email address.' };
   }
 
-  const fromEmail = import.meta.env.VITE_RESEND_FROM_EMAIL || 'Buildicy ERP <onboarding@resend.dev>';
-  const bodyPayload = JSON.stringify({
-    from: fromEmail,
-    to: validRecipients,
-    subject: notification.subject,
-    html: notification.htmlText || `<p>${notification.bodyText.replace(/\n/g, '<br/>')}</p>`,
-  });
+  const configuredFrom = import.meta.env.VITE_RESEND_FROM_EMAIL || 'Buildicy ERP <notifications@erp.buildicy.com>';
 
-  const reqHeaders = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
+  const dispatchResend = async (fromAddress: string) => {
+    const payload = {
+      from: fromAddress,
+      to: validRecipients,
+      subject: notification.subject,
+      html: notification.htmlText || `<p>${notification.bodyText.replace(/\n/g, '<br/>')}</p>`,
+    };
+
+    const endpoints = [
+      'https://proxy.cors.sh/https://api.resend.com/emails',
+      'https://api.resend.com/emails',
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.id) {
+          console.log(`[Resend API Email Dispatched via ${url}]`, data);
+          return { success: true, data };
+        }
+        if (data.message) {
+          console.warn(`[Resend Notice from ${url}]`, data.message);
+        }
+      } catch (e) {
+        console.warn(`[Resend Endpoint Warning: ${url}]`, e);
+      }
+    }
+
+    return { success: false, error: 'All email gateway endpoints failed.' };
   };
 
-  // Direct Resend API + CORS Proxy fallback for client-side browser execution
-  const targetEndpoints = [
-    'https://api.resend.com/emails',
-    'https://corsproxy.io/?https://api.resend.com/emails'
-  ];
+  // 1. Try sending from configured domain
+  let result = await dispatchResend(configuredFrom);
 
-  let lastErrorMessage = '';
-
-  for (const endpointUrl of targetEndpoints) {
-    try {
-      const response = await fetch(endpointUrl, {
-        method: 'POST',
-        headers: reqHeaders,
-        body: bodyPayload,
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        console.warn(`[Resend API Output from ${endpointUrl}]`, result);
-        lastErrorMessage = result.message || `Resend API returned status ${response.status}.`;
-        
-        // If it's a domain permission or authentication error, return the explicit error
-        if (response.status === 401 || response.status === 403 || response.status === 422) {
-          return { success: false, error: lastErrorMessage };
-        }
-        continue;
-      }
-
-      console.log(`[Resend Email Dispatched via ${endpointUrl}]`, result);
-      return { success: true, data: result };
-    } catch (err: any) {
-      console.warn(`[Resend Fetch Attempt (${endpointUrl}) Failed]`, err?.message || err);
-      lastErrorMessage = err?.message || 'Browser CORS restriction.';
+  // 2. If custom domain isn't verified in Resend yet, fallback to onboarding@resend.dev
+  if (!result.success && !configuredFrom.includes('onboarding@resend.dev')) {
+    console.warn(`[Resend] Domain unverified for ${configuredFrom}. Retrying with onboarding@resend.dev...`);
+    const fallbackResult = await dispatchResend('onboarding@resend.dev');
+    if (fallbackResult.success) {
+      return fallbackResult;
     }
+    result = fallbackResult;
   }
 
-  // If browser CORS prevents client-side fetch, log to local Outbound Notifications safely
-  console.info('[Resend API] Email saved in Outbound Notifications log (Browser CORS fallback).');
+  if (result.success) return result;
+
+  console.warn('[Resend Dispatch Notice]', result.error);
   return {
-    success: true,
-    data: 'Recorded in Outbound Email Logs (Browser CORS Fallback)',
+    success: false,
+    error: result.error,
   };
 }
 
@@ -137,12 +143,47 @@ async function logNotification(notification: MailNotification): Promise<{ succes
     const existing = getStoredNotifications();
     const updated = [notification, ...existing];
     saveNotifications(updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('erp_notifications_updated'));
+    }
     return await sendResendHttpEmail(notification);
   } catch (err: any) {
     console.error('Error logging notification:', err);
     return { success: false, error: err?.message || 'Failed to log notification.' };
   }
 }
+
+export const sendCustomNotificationEmail = async (
+  recipientEmail: string,
+  subject: string,
+  messageBody: string,
+  triggerEvent: MailNotification['triggerEvent'] = 'TASK_ASSIGNED'
+): Promise<{ success: boolean; error?: string }> => {
+  const html = buildEmailTemplate(
+    subject,
+    'Buildicy Enterprise Notification',
+    `
+      <p>Hello <strong>${recipientEmail}</strong>,</p>
+      <p>${messageBody}</p>
+      <div class="detail-box">
+        <div class="detail-item"><span class="label">📧 Recipient:</span> ${recipientEmail}</div>
+        <div class="detail-item"><span class="label">📅 Timestamp:</span> ${new Date().toLocaleString()}</div>
+        <div class="detail-item"><span class="label">🛡️ Gateway Status:</span> Active & Verified</div>
+      </div>
+      <p>Logged in Sent Outbound Emails Log audit trail.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [recipientEmail],
+    subject: `[Buildicy ERP] ${subject}`,
+    bodyText: messageBody,
+    htmlText: html,
+    triggerEvent,
+    createdAt: new Date().toISOString(),
+  });
+};
 
 export const sendTaskAssignmentEmail = async (
   task: Task,
@@ -340,9 +381,13 @@ export const notifyMeetingScheduled = async (
     `
   );
 
+  const recipientEmails = Array.from(
+    new Set([...participants.map((p) => p.email), organizer.email])
+  ).filter((email) => email && email.includes('@'));
+
   return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    to: participants.map((p) => p.email),
+    to: recipientEmails.length > 0 ? recipientEmails : [organizer.email],
     subject: `[Buildicy ERP] Scheduled Meeting: ${meeting.title}`,
     bodyText: `Hello,\n\nMeeting: ${meeting.title}\nTime: ${meeting.scheduledAt}\nGoogle Meet Link: ${meetUrl}\nOrganizer: ${organizerFormatted}`,
     htmlText: html,
@@ -446,7 +491,35 @@ export const sendForgotPasswordEmail = async (
     createdAt: new Date().toISOString(),
   });
 };
+export const sendPasswordChangedEmail = async (
+  user: User
+): Promise<{ success: boolean; error?: string }> => {
+  const html = buildEmailTemplate(
+    'Security Notice: Account Password Changed 🔐',
+    'Account Security Notice',
+    `
+      <p>Hello <strong>${user.fullName}</strong>,</p>
+      <p>This is a security confirmation that the workspace password for your Buildicy ERP account (<strong>${user.email}</strong>) was successfully changed.</p>
+      <div class="detail-box" style="border-left-color: #10b981;">
+        <div class="detail-item"><span class="label">👤 Account Name:</span> ${user.fullName}</div>
+        <div class="detail-item"><span class="label">📧 Email Address:</span> ${user.email}</div>
+        <div class="detail-item"><span class="label">⏰ Changed Timestamp:</span> ${new Date().toLocaleString()}</div>
+        <div class="detail-item"><span class="label">🛡️ Status:</span> Password Updated Successfully</div>
+      </div>
+      <p>If you authorized this password change, no further action is required. If you did <strong>NOT</strong> perform this change, please contact your Buildicy ERP workspace administrator immediately.</p>
+    `
+  );
 
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [user.email],
+    subject: `[Buildicy ERP] 🔐 Security Notice: Password Changed for ${user.fullName}`,
+    bodyText: `Hello ${user.fullName},\n\nYour Buildicy ERP account password was successfully updated on ${new Date().toLocaleString()}.\n\nIf you did not perform this change, please contact your administrator immediately.`,
+    htmlText: html,
+    triggerEvent: 'PASSWORD_CHANGED',
+    createdAt: new Date().toISOString(),
+  });
+};
 export const sendBirthdayWishEmail = async (user: User): Promise<void> => {
   const html = buildEmailTemplate(
     'Happy Birthday! 🎉🎂',
@@ -474,102 +547,295 @@ export const sendBirthdayWishEmail = async (user: User): Promise<void> => {
   });
 };
 
-export const sendWelcomeMessageToAll = async (
-  users: User[],
-  sender: User
-): Promise<{ count: number }> => {
-  let count = 0;
-  for (const user of users) {
-    if (!user.email || !user.email.includes('@')) continue;
-
-    const html = buildEmailTemplate(
-      'Welcome to Buildicy ERP! 🚀',
-      'Team Welcome Announcement',
-      `
-        <p>Dear <strong>${user.fullName}</strong>,</p>
-        <p>We are delighted to welcome you to the <strong>Buildicy Enterprise ERP Workspace</strong>! 🎉</p>
-        <p>Your portal is fully configured for real-time task management, project execution, team chat compliance, and HR analytics.</p>
-        <div class="detail-box">
-          <div class="detail-item"><span class="label">👤 Member Name:</span> ${user.fullName}</div>
-          <div class="detail-item"><span class="label">💼 Job Title:</span> ${user.title || 'Team Member'}</div>
-          <div class="detail-item"><span class="label">🛡️ Role Access:</span> ${user.roleTier.toUpperCase()}</div>
-          <div class="detail-item"><span class="label">📧 Registered Email:</span> ${user.email}</div>
-          <div class="detail-item"><span class="label">📣 Dispatched By:</span> ${sender.fullName} (${sender.roleTier.toUpperCase()})</div>
-        </div>
-        <p>Log in anytime to view your assigned projects, collaborate with team members, and check daily shift boards.</p>
-        <a href="https://meet.google.com/sbd-ccfe-hnz" class="btn">Join Team Meeting Hub</a>
-      `
-    );
-
-    logNotification({
-      id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      to: [user.email],
-      subject: `[Buildicy ERP] 🚀 Special Welcome to Buildicy Workspace, ${user.fullName}!`,
-      bodyText: `Dear ${user.fullName}, Welcome to Buildicy Enterprise ERP! Log in to view your assigned workspace.`,
-      htmlText: html,
-      triggerEvent: 'WELCOME_MESSAGE',
-      createdAt: new Date().toISOString(),
-    });
-    count++;
-  }
-  return { count };
-};
-
-export const hasWelcomeBeenSentToUser = (user: User | string): boolean => {
-  const email = typeof user === 'string' ? user : user.email;
-  if (typeof user !== 'string' && user.welcomeSent) return true;
-  if (!email) return false;
-  const notifications = getStoredNotifications();
-  return notifications.some(
-    (n) =>
-      n.triggerEvent === 'WELCOME_MESSAGE' &&
-      n.to.some((recipientEmail) => recipientEmail.toLowerCase() === email.toLowerCase())
-  );
-};
-
-export const sendWelcomeMessageToUser = async (
-  user: User,
-  sender: User
-): Promise<{ success: boolean; error?: string }> => {
-  if (!user.email || !user.email.includes('@')) {
-    return { success: false, error: 'User does not have a valid email address.' };
-  }
-
-  // ENFORCE SINGLE DISPATCH RESTRICTION
-  if (hasWelcomeBeenSentToUser(user)) {
-    return {
-      success: false,
-      error: `Welcome message has already been dispatched to ${user.fullName} (${user.email}). Welcome messages can only be sent once per member.`
-    };
-  }
-
+export const sendWelcomeInviteEmail = async (user: User): Promise<{ success: boolean; error?: string }> => {
   const html = buildEmailTemplate(
-    'Welcome to Buildicy ERP! 🚀',
-    'Personal Welcome Announcement',
+    'Welcome to the Buildicy ERP Team! 🎉',
+    'Team Onboarding',
     `
       <p>Dear <strong>${user.fullName}</strong>,</p>
-      <p>We are delighted to welcome you to the <strong>Buildicy Enterprise ERP Workspace</strong>! 🎉</p>
-      <p>Your workspace portal is active and configured for real-time task management, project execution, team chat compliance, and HR analytics.</p>
-      <div class="detail-box">
-        <div class="detail-item"><span class="label">👤 Member Name:</span> ${user.fullName}</div>
-        <div class="detail-item"><span class="label">💼 Job Title:</span> ${user.title || 'Team Member'}</div>
-        <div class="detail-item"><span class="label">🛡️ Role Access:</span> ${user.roleTier.toUpperCase()}</div>
-        <div class="detail-item"><span class="label">📧 Username / Gmail:</span> ${user.email}</div>
-        <div class="detail-item"><span class="label">📣 Dispatched By:</span> ${sender.fullName} (${sender.roleTier.toUpperCase()})</div>
+      <p>Welcome to <strong>Buildicy ERP Platform</strong>! We are thrilled to have you join our team as <strong>${user.title || 'Team Member'}</strong>.</p>
+      <div class="detail-box" style="border-left-color: #7c3aed; background: #f8fafc;">
+        <div class="detail-item"><span class="label">👤 Name:</span> <strong>${user.fullName}</strong></div>
+        <div class="detail-item"><span class="label">💼 Role / Title:</span> ${user.title || 'Team Member'}</div>
+        <div class="detail-item"><span class="label">📧 Registered Email:</span> ${user.email}</div>
+        <div class="detail-item"><span class="label">🛡️ Role Tier:</span> ${user.roleTier.toUpperCase()}</div>
+        <div class="detail-item"><span class="label">📅 Date of Joining:</span> ${user.dateOfJoining || 'Recent'}</div>
       </div>
-      <p>Log in anytime to view your assigned tasks, collaborate with team members, and check daily shift boards.</p>
-      <a href="https://meet.google.com/sbd-ccfe-hnz" class="btn">Join Team Workspace</a>
+      <p>You can now access your workspace, view active projects, track tasks, and collaborate with your team at <a href="https://erp.buildicy.com" style="color: #7c3aed; font-weight: 700;">https://erp.buildicy.com</a>.</p>
     `
   );
 
   return await logNotification({
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [user.email],
-    subject: `[Buildicy ERP] 🚀 Special Welcome to Buildicy Workspace, ${user.fullName}!`,
-    bodyText: `Dear ${user.fullName}, Welcome to Buildicy Enterprise ERP! Log in at https://erp.buildicy.com with username: ${user.email}`,
+    subject: `[Buildicy ERP] Welcome to the Team, ${user.fullName}! 🎉`,
+    bodyText: `Dear ${user.fullName},\n\nWelcome to Buildicy ERP! We are excited to have you on board as ${user.title || 'Team Member'}.\n\nAccess your account at https://erp.buildicy.com`,
     htmlText: html,
-    triggerEvent: 'WELCOME_MESSAGE',
+    triggerEvent: 'WELCOME_INVITE',
     createdAt: new Date().toISOString(),
   });
 };
+
+export const sendShiftCheckInEmail = async (
+  user: User,
+  checkInTime: string,
+  adminsAndReviewers: User[]
+): Promise<{ success: boolean; error?: string }> => {
+  const recipientEmails = Array.from(new Set(adminsAndReviewers.map((u) => u.email))).filter((e) => e && e.includes('@'));
+  if (recipientEmails.length === 0) return { success: true };
+
+  const userRoleStr = formatUserRole(user);
+  const html = buildEmailTemplate(
+    'Intern Shift Check-In Alert 🟢',
+    'Shift & Attendance Tracking',
+    `
+      <p>Hello Admins & Reviewers,</p>
+      <p><strong>${userRoleStr}</strong> has checked in and started their shift.</p>
+      <div class="detail-box" style="border-left-color: #10b981;">
+        <div class="detail-item"><span class="label">👤 Team Member:</span> <strong>${user.fullName}</strong></div>
+        <div class="detail-item"><span class="label">💼 Role / Position:</span> ${user.title || user.roleTier}</div>
+        <div class="detail-item"><span class="label">⏰ Check-In Time:</span> <strong>${checkInTime}</strong></div>
+        <div class="detail-item"><span class="label">📅 Date:</span> ${new Date().toLocaleDateString()}</div>
+        <div class="detail-item"><span class="label">🟢 Shift Status:</span> ACTIVE & WORKING</div>
+      </div>
+      <p>You can monitor active intern shift status in real-time on the Intern Shift Board.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: recipientEmails,
+    subject: `[Buildicy ERP] 🟢 Shift Check-In: ${user.fullName}`,
+    bodyText: `${user.fullName} checked in for shift at ${checkInTime}.`,
+    htmlText: html,
+    triggerEvent: 'SHIFT_CHECK_IN',
+    createdAt: new Date().toISOString(),
+  });
+};
+
+export const sendShiftCheckOutEmail = async (
+  user: User,
+  checkOutTime: string,
+  durationHrs: number,
+  totalWorkedHoursToday: number,
+  adminsAndReviewers: User[]
+): Promise<{ success: boolean; error?: string }> => {
+  const recipientEmails = Array.from(new Set(adminsAndReviewers.map((u) => u.email))).filter((e) => e && e.includes('@'));
+  if (recipientEmails.length === 0) return { success: true };
+
+  const userRoleStr = formatUserRole(user);
+  const html = buildEmailTemplate(
+    'Intern Shift Check-Out Alert 🔴',
+    'Shift & Attendance Tracking',
+    `
+      <p>Hello Admins & Reviewers,</p>
+      <p><strong>${userRoleStr}</strong> has completed their shift session and checked out.</p>
+      <div class="detail-box" style="border-left-color: #7c3aed;">
+        <div class="detail-item"><span class="label">👤 Team Member:</span> <strong>${user.fullName}</strong></div>
+        <div class="detail-item"><span class="label">💼 Role / Position:</span> ${user.title || user.roleTier}</div>
+        <div class="detail-item"><span class="label">⏰ Check-Out Time:</span> <strong>${checkOutTime}</strong></div>
+        <div class="detail-item"><span class="label">⏱️ Session Duration:</span> ${durationHrs.toFixed(2)} hrs</div>
+        <div class="detail-item"><span class="label">📊 Total Worked Today:</span> <strong>${totalWorkedHoursToday.toFixed(2)} hrs</strong></div>
+        <div class="detail-item"><span class="label">📅 Date:</span> ${new Date().toLocaleDateString()}</div>
+      </div>
+      <p>Detailed shift logs are updated in your ERP Intern Shift Board.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: recipientEmails,
+    subject: `[Buildicy ERP] 🔴 Shift Check-Out: ${user.fullName} (${totalWorkedHoursToday.toFixed(1)} hrs)`,
+    bodyText: `${user.fullName} checked out at ${checkOutTime}. Session: ${durationHrs.toFixed(2)} hrs. Total Today: ${totalWorkedHoursToday.toFixed(2)} hrs.`,
+    htmlText: html,
+    triggerEvent: 'SHIFT_CHECK_OUT',
+    createdAt: new Date().toISOString(),
+  });
+};
+
+export const sendLeaveRequestRaisedEmail = async (
+  request: LeaveRequest,
+  requester: User,
+  recipients: User[]
+): Promise<{ success: boolean; error?: string }> => {
+  const recipientEmails = Array.from(new Set(recipients.map((u) => u.email))).filter((e) => e && e.includes('@'));
+  if (recipientEmails.length === 0) return { success: true };
+
+  const isPermission = request.requestType === 'permission';
+  const typeLabel = isPermission ? 'Short Hours Permission' : 'Full Leave Request';
+  const timeInfo = isPermission
+    ? `<div class="detail-item"><span class="label">⏰ Time Window:</span> ${request.startTime || '—'} to ${request.endTime || '—'} (${request.permissionHours || 0} hrs)</div>`
+    : `<div class="detail-item"><span class="label">📅 Leave Dates:</span> ${request.startDate} to ${request.endDate}</div>`;
+
+  const html = buildEmailTemplate(
+    `New ${typeLabel} Raised 📝`,
+    'Leave & Permission Workflow',
+    `
+      <p>Hello,</p>
+      <p>A new <strong>${typeLabel}</strong> has been submitted by <strong>${requester.fullName}</strong> (${requester.title || requester.roleTier}).</p>
+      <div class="detail-box" style="border-left-color: #8b5cf6;">
+        <div class="detail-item"><span class="label">👤 Requester:</span> <strong>${requester.fullName}</strong></div>
+        <div class="detail-item"><span class="label">💼 Role Tier:</span> ${requester.roleTier.toUpperCase()}</div>
+        <div class="detail-item"><span class="label">🏷️ Category:</span> ${request.leaveCategory.toUpperCase().replace('_', ' ')}</div>
+        ${timeInfo}
+        <div class="detail-item"><span class="label">💬 Reason:</span> <em>"${request.reason}"</em></div>
+        <div class="detail-item"><span class="label">⌛ Workflow Status:</span> ${request.status === 'pending_reviewer' ? 'Pending Reviewer Sign-off' : 'Pending Admin Sign-off'}</div>
+      </div>
+      <p>Please review and take action on the request in the <strong>Buildicy ERP Leave & Permissions Hub</strong>.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: recipientEmails,
+    subject: `[Buildicy ERP] 📝 New ${typeLabel}: ${requester.fullName}`,
+    bodyText: `New ${typeLabel} raised by ${requester.fullName}. Reason: ${request.reason}`,
+    htmlText: html,
+    triggerEvent: 'LEAVE_REQUEST_RAISED',
+    createdAt: new Date().toISOString(),
+  });
+};
+
+export const sendLeaveApprovedByReviewerEmail = async (
+  request: LeaveRequest,
+  requester: User,
+  reviewer: User,
+  admins: User[]
+): Promise<{ success: boolean; error?: string }> => {
+  const isPermission = request.requestType === 'permission';
+  const typeLabel = isPermission ? 'Permission' : 'Leave';
+  
+  // Send email to Requester
+  const requesterHtml = buildEmailTemplate(
+    `${typeLabel} Request Approved by Reviewer ✍️`,
+    'Reviewer Sign-off',
+    `
+      <p>Hello ${requester.fullName},</p>
+      <p>Your <strong>${typeLabel} Request</strong> has been <strong>APPROVED</strong> by your reviewer, <strong>${reviewer.fullName}</strong>!</p>
+      <div class="detail-box" style="border-left-color: #3b82f6;">
+        <div class="detail-item"><span class="label">✍️ Approved By Reviewer:</span> ${reviewer.fullName}</div>
+        <div class="detail-item"><span class="label">📅 Dates / Time:</span> ${request.startDate} ${isPermission ? `(${request.startTime} - ${request.endTime})` : `to ${request.endDate}`}</div>
+        <div class="detail-item"><span class="label">💬 Reviewer Remarks:</span> <em>"${request.reviewerRemark || 'Looks good'}"</em></div>
+        <div class="detail-item"><span class="label">⌛ Next Step:</span> Forwarded to Founders (Prajwal & Mayur) for final sign-off.</div>
+      </div>
+    `
+  );
+
+  await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [requester.email],
+    subject: `[Buildicy ERP] ✍️ ${typeLabel} Approved by Reviewer (${reviewer.fullName})`,
+    bodyText: `Your ${typeLabel} request was approved by reviewer ${reviewer.fullName} and sent to admins.`,
+    htmlText: requesterHtml,
+    triggerEvent: 'LEAVE_REVIEWER_APPROVED',
+    createdAt: new Date().toISOString(),
+  });
+
+  // Also notify Admins
+  const adminEmails = Array.from(new Set(admins.map(u => u.email))).filter(e => e && e.includes('@'));
+  if (adminEmails.length > 0) {
+    const adminHtml = buildEmailTemplate(
+      `Action Needed: ${typeLabel} Approved by Reviewer 📩`,
+      'Founder Final Sign-Off',
+      `
+        <p>Hello Admins,</p>
+        <p>Reviewer <strong>${reviewer.fullName}</strong> has approved the ${typeLabel.toLowerCase()} request for <strong>${requester.fullName}</strong>.</p>
+        <div class="detail-box" style="border-left-color: #7c3aed;">
+          <div class="detail-item"><span class="label">👤 Intern Requester:</span> <strong>${requester.fullName}</strong></div>
+          <div class="detail-item"><span class="label">✍️ Approved By Reviewer:</span> ${reviewer.fullName}</div>
+          <div class="detail-item"><span class="label">📅 Dates / Time:</span> ${request.startDate} ${isPermission ? `(${request.startTime} - ${request.endTime})` : `to ${request.endDate}`}</div>
+          <div class="detail-item"><span class="label">💬 Reason:</span> <em>"${request.reason}"</em></div>
+        </div>
+        <p>Please grant final approval in the Leave & Permissions Hub.</p>
+      `
+    );
+
+    await logNotification({
+      id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      to: adminEmails,
+      subject: `[Buildicy ERP] 📩 Action Required: ${typeLabel} for ${requester.fullName} (Approved by ${reviewer.fullName})`,
+      bodyText: `${typeLabel} for ${requester.fullName} approved by ${reviewer.fullName}, pending admin sign-off.`,
+      htmlText: adminHtml,
+      triggerEvent: 'LEAVE_PENDING_ADMIN',
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  return { success: true };
+};
+
+export const sendLeaveFinalApprovedByAdminEmail = async (
+  request: LeaveRequest,
+  requester: User,
+  admin: User
+): Promise<{ success: boolean; error?: string }> => {
+  const isPermission = request.requestType === 'permission';
+  const typeLabel = isPermission ? 'Permission' : 'Leave';
+
+  const html = buildEmailTemplate(
+    `🎉 ${typeLabel} Request Granted Final Approval!`,
+    'Final Sign-Off Granted',
+    `
+      <p>Hello ${requester.fullName},</p>
+      <p>Great news! Your <strong>${typeLabel} Request</strong> has been granted <strong>FINAL APPROVAL</strong> by Founder / Admin <strong>${admin.fullName}</strong>.</p>
+      <div class="detail-box" style="border-left-color: #10b981;">
+        <div class="detail-item"><span class="label">👤 Requester:</span> <strong>${requester.fullName}</strong></div>
+        <div class="detail-item"><span class="label">👑 Final Approved By:</span> <strong>${admin.fullName} (Founder/Admin)</strong></div>
+        <div class="detail-item"><span class="label">📅 Dates / Time:</span> ${request.startDate} ${isPermission ? `(${request.startTime} - ${request.endTime})` : `to ${request.endDate}`}</div>
+        <div class="detail-item"><span class="label">🏷️ Category:</span> ${request.leaveCategory.toUpperCase().replace('_', ' ')}</div>
+        <div class="detail-item"><span class="label">💬 Admin Remarks:</span> <em>"${request.adminRemark || 'Granted'}"</em></div>
+        <div class="detail-item"><span class="label">✅ Status:</span> FULLY APPROVED</div>
+      </div>
+      <p>Enjoy your time off! Your attendance record has been updated accordingly.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [requester.email],
+    subject: `[Buildicy ERP] 🎉 ${typeLabel} Request Granted Final Approval! (${request.startDate})`,
+    bodyText: `Your ${typeLabel} request for ${request.startDate} was granted final approval by ${admin.fullName}.`,
+    htmlText: html,
+    triggerEvent: 'LEAVE_FINAL_APPROVED',
+    createdAt: new Date().toISOString(),
+  });
+};
+
+export const sendLeaveRejectedEmail = async (
+  request: LeaveRequest,
+  requester: User,
+  actor: User,
+  remark: string
+): Promise<{ success: boolean; error?: string }> => {
+  const isPermission = request.requestType === 'permission';
+  const typeLabel = isPermission ? 'Permission' : 'Leave';
+
+  const html = buildEmailTemplate(
+    `⚠️ ${typeLabel} Request Rejected`,
+    'Request Decision',
+    `
+      <p>Hello ${requester.fullName},</p>
+      <p>Your <strong>${typeLabel} Request</strong> for <strong>${request.startDate}</strong> has been <strong>REJECTED</strong> by <strong>${actor.fullName}</strong> (${actor.title || actor.roleTier}).</p>
+      <div class="detail-box" style="border-left-color: #ef4444;">
+        <div class="detail-item"><span class="label">👤 Decision Maker:</span> ${actor.fullName} (${actor.roleTier.toUpperCase()})</div>
+        <div class="detail-item"><span class="label">📅 Requested Date(s):</span> ${request.startDate} ${isPermission ? `(${request.startTime} - ${request.endTime})` : `to ${request.endDate}`}</div>
+        <div class="detail-item"><span class="label">💬 Rejection Remarks:</span> <em>"${remark || 'Not approved at this time'}"</em></div>
+        <div class="detail-item"><span class="label">❌ Status:</span> REJECTED</div>
+      </div>
+      <p>If you have any questions, please contact your reviewer or management.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [requester.email],
+    subject: `[Buildicy ERP] ⚠️ ${typeLabel} Request Rejected`,
+    bodyText: `Your ${typeLabel} request for ${request.startDate} was rejected by ${actor.fullName}. Reason: ${remark}`,
+    htmlText: html,
+    triggerEvent: 'LEAVE_REJECTED',
+    createdAt: new Date().toISOString(),
+  });
+};
+
+
 

@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
+import { playNotificationSound } from '@/lib/audio';
 import { Sidebar } from './Sidebar';
 import { todayIso } from '@/lib/date';
 import { NotificationLog } from '@/components/common/NotificationLog';
@@ -8,6 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Menu, Layers, Bell, Sun, Moon, Play, Square, Clock } from 'lucide-react';
 
+import { useOperationalNotifications } from '@/hooks/useOperationalNotifications';
+
 interface AppLayoutProps {
   children: React.ReactNode;
   activeTab: string;
@@ -15,7 +19,10 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children, activeTab, onSelectTab }) => {
-  const { currentUser, notifications, tasks, attendanceRecords, checkIn, checkOut } = useAuth();
+  const { currentUser, notifications, tasks, attendanceRecords, chatMessages, users, checkIn, checkOut } = useAuth();
+  const toast = useToast();
+  const prevMsgCountRef = useRef<number>(chatMessages.length);
+
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -23,6 +30,31 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, activeTab, onSel
   });
 
   const [elapsedTimeStr, setElapsedTimeStr] = useState<string>('0h 0m');
+
+  // 🔔 Global Team Messages Listener: Audio Chime & Toast Notification
+  useEffect(() => {
+    if (chatMessages.length > prevMsgCountRef.current) {
+      const latestMsg = chatMessages[chatMessages.length - 1];
+      if (latestMsg && currentUser && latestMsg.senderId !== currentUser.id) {
+        const isTargeted = !latestMsg.recipientId || latestMsg.recipientId === currentUser.id;
+        if (isTargeted) {
+          const sender = users.find(u => u.id === latestMsg.senderId);
+          const senderName = sender ? sender.fullName : 'Team Member';
+          const targetChannelName = latestMsg.channelId ? latestMsg.channelId : 'Direct DM';
+
+          // 🔊 Play Chime Sound
+          playNotificationSound();
+
+          // 💬 Trigger Toast Notification
+          toast.info(
+            `💬 New Message from ${senderName}`,
+            `[${targetChannelName}]: ${latestMsg.text.length > 55 ? latestMsg.text.substring(0, 55) + '...' : latestMsg.text}`
+          );
+        }
+      }
+    }
+    prevMsgCountRef.current = chatMessages.length;
+  }, [chatMessages.length, currentUser?.id, users, toast]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -97,12 +129,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, activeTab, onSel
     return () => clearInterval(interval);
   }, [activeRecord]);
 
-  const pendingReviewTasks = tasks.filter(t => 
-    (currentUser.roleTier === 'reviewer' && t.status === 'Submitted') ||
-    (currentUser.roleTier === 'admin' && t.status === 'Pending Admin')
-  );
-
-  const totalUnreadAlerts = notifications.length + pendingReviewTasks.length;
+  const { unreadCount: totalUnreadAlerts } = useOperationalNotifications();
 
   const getPageTitle = (tabKey: string) => {
     switch (tabKey) {
@@ -112,6 +139,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, activeTab, onSel
       case 'approval-queue': return 'Admin Final Approval Queue';
       case 'chat': return 'Team Messages';
       case 'attendance': return 'Intern Shift Board';
+      case 'leave-management': return 'Leave & Permissions Hub';
       case 'projects': return 'Projects & Target Deadlines';
       case 'meetings': return 'Scheduled Team Meetings';
       case 'hr-hub': return 'Zoho People HR & Employee Hub';

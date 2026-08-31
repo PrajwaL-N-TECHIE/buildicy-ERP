@@ -22,7 +22,8 @@ import {
   MessageSquare,
   Clock,
   Cake,
-  LogOut
+  LogOut,
+  CalendarOff
 } from 'lucide-react';
 
 import { BuildicyLogo } from '@/components/common/BuildicyLogo';
@@ -40,7 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenNotifications,
   onCloseMobileDrawer 
 }) => {
-  const { currentUser, users, tasks, notifications, loginAsUser, logout } = useAuth();
+  const { currentUser, users, tasks, notifications, chatMessages, leaveRequests, loginAsUser, logout } = useAuth();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
 
   if (!currentUser) return null;
@@ -48,12 +49,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const submittedCount = tasks.filter(t => t.status === 'Submitted').length;
   const pendingAdminCount = tasks.filter(t => t.status === 'Pending Admin').length;
 
+  const isAdmin = currentUser.roleTier === 'admin';
+  const isReviewer = currentUser.roleTier === 'reviewer';
+
+  const pendingLeaveCount = (leaveRequests || []).filter(r => {
+    if (isReviewer) return r.status === 'pending_reviewer';
+    if (isAdmin) return r.status === 'pending_admin' || r.status === 'pending_reviewer';
+    return false;
+  }).length;
+
+  const unreadChatCount = chatMessages.filter(msg => {
+    if (!currentUser) return false;
+    if (msg.senderId === currentUser.id) return false;
+    if ((msg.readBy || []).includes(currentUser.id)) return false;
+    if (msg.recipientId) {
+      return msg.recipientId === currentUser.id;
+    }
+    return true;
+  }).length;
+
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
-
-  const isAdmin = currentUser.roleTier === 'admin';
-  const isReviewer = currentUser.roleTier === 'reviewer';
 
   const navItems = [
     {
@@ -67,8 +84,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: Inbox, 
           badge: isReviewer ? submittedCount : pendingAdminCount 
         }] : []),
-        { id: 'chat', label: 'Team Messages', icon: MessageSquare },
-        { id: 'attendance', label: isReviewer || isAdmin ? 'Intern Shift Board' : 'Shift Check-In', icon: Clock },
+        { id: 'chat', label: 'Team Messages', icon: MessageSquare, badge: unreadChatCount, isChat: true },
+        ...((isAdmin || isReviewer) ? [{ id: 'attendance', label: 'Intern Shift Board', icon: Clock }] : []),
+        { id: 'leave-management', label: 'Leave & Permissions', icon: CalendarOff, badge: pendingLeaveCount },
         { id: 'projects', label: 'Projects & Deadlines', icon: Target },
         { id: 'meetings', label: 'Scheduled Meetings', icon: CalendarDays },
       ]
@@ -77,11 +95,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       group: 'ADMINISTRATION',
       items: [
         { id: 'hr-hub', label: 'Personnel & Employee Hub', icon: Cake },
-        ...((isAdmin || isReviewer) ? [{ id: 'project-mgmt', label: 'Project Directory', icon: Building2 }] : []),
         ...(isAdmin ? [
           { id: 'sent-emails', label: 'Sent Emails Log', icon: MailCheck },
-          { id: 'chat-logs', label: 'Chat Compliance Logs', icon: MessageSquare },
-          { id: 'audit-logs', label: 'Audit Logs', icon: ShieldAlert }
+          { id: 'chat-logs', label: 'Chat Compliance Logs', icon: MessageSquare }
         ] : [])
       ]
     }
@@ -122,6 +138,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {group.items.map(item => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id;
+                  const isUnreadChat = item.id === 'chat' && unreadChatCount > 0;
+
                   return (
                     <button
                       key={item.id}
@@ -132,14 +150,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-xl transition-all ${
                         isActive 
                           ? 'bg-purple-600 text-white shadow-2xs font-bold' 
+                          : isUnreadChat
+                          ? 'bg-rose-50/80 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold border border-rose-200/70 dark:border-rose-900/60'
                           : 'text-slate-600 dark:text-slate-300 hover:bg-purple-50 hover:text-purple-700'
                       }`}
                     >
                       <div className="flex items-center space-x-2.5">
-                        <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                        <Icon className={`w-4 h-4 ${isActive ? 'text-white' : isUnreadChat ? 'text-rose-500 animate-bounce' : 'text-slate-400'}`} />
                         <span>{item.label}</span>
                       </div>
-                      {item.badge && item.badge > 0 ? (
+
+                      {item.id === 'chat' && unreadChatCount > 0 ? (
+                        <span className="flex items-center space-x-1.5 shrink-0">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                          </span>
+                          <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-md transition-all ${
+                            isActive 
+                              ? 'bg-white text-rose-600' 
+                              : 'bg-rose-500 text-white shadow-rose-500/40'
+                          }`}>
+                            {unreadChatCount} NEW
+                          </span>
+                        </span>
+                      ) : item.badge && item.badge > 0 ? (
                         <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
                           isActive ? 'bg-white text-purple-700' : 'bg-purple-100 text-purple-700'
                         }`}>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,7 @@ const PRESET_AVATARS = [
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ open, onOpenChange }) => {
   const { currentUser, updateUser, changePassword } = useAuth();
+  const toast = useToast();
 
   const [fullName, setFullName] = useState<string>(currentUser?.fullName || '');
   const [title, setTitle] = useState<string>(currentUser?.title || '');
@@ -61,9 +63,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ open, onOpen
     setErrorMsg('');
 
     try {
+      const wasPasswordChanged = Boolean(newPassword);
+
       if (newPassword) {
+        if (newPassword.length < 6) {
+          const errMsg = 'Password must be at least 6 characters long.';
+          setErrorMsg(errMsg);
+          toast.error('Invalid Password', errMsg);
+          setIsSaving(false);
+          return;
+        }
         if (newPassword !== confirmPassword) {
-          setErrorMsg('New password and confirm password do not match.');
+          const errMsg = 'New password and confirm password do not match.';
+          setErrorMsg(errMsg);
+          toast.error('Password Mismatch', errMsg);
           setIsSaving(false);
           return;
         }
@@ -80,13 +93,28 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ open, onOpen
       }
 
       await updateUser(currentUser.id, updateData);
-      setSuccessMsg('Profile and password settings updated successfully!');
+
+      if (wasPasswordChanged) {
+        const msg = 'Password updated successfully! A security notice was sent to your email.';
+        setSuccessMsg(msg);
+        toast.success(
+          '🔐 Password Changed Successfully!',
+          `Security confirmation email dispatched to ${currentUser.email}`
+        );
+      } else {
+        const msg = 'Profile settings updated successfully!';
+        setSuccessMsg(msg);
+        toast.success('✨ Profile Updated', 'Your profile preferences have been updated.');
+      }
+
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating profile:', err);
-      setErrorMsg('Failed to update profile.');
+      const errMsg = err?.message || 'Failed to update profile. Please try again.';
+      setErrorMsg(errMsg);
+      toast.error('Update Failed', errMsg);
     } finally {
       setIsSaving(false);
     }

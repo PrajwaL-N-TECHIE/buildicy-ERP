@@ -161,3 +161,38 @@ export interface AttendanceRecord {
   totalWorkedHoursToday: number;
   status: 'checked_in' | 'checked_out';
 }
+
+export type LeaveType = 'leave' | 'permission';
+export type LeaveCategory = 'casual' | 'sick' | 'academic' | 'emergency' | 'short_permission';
+export type LeaveStatus = 'pending_reviewer' | 'pending_admin' | 'approved' | 'rejected';
+
+export interface LeaveRequest {
+  id: string;
+  requesterId: string;
+  requesterRole: RoleTier;
+  requestType: LeaveType;
+  leaveCategory: LeaveCategory;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  startTime?: string | null; // e.g. "14:00"
+  endTime?: string | null; // e.g. "16:00"
+  permissionHours?: number | null; // e.g. 2
+  reason: string;
+  status: LeaveStatus;
+
+  // Reviewer Stage (For Intern requests)
+  reviewerId?: string | null;
+  reviewerDecision?: 'approved' | 'rejected' | null;
+  reviewerRemark?: string | null;
+  reviewedAt?: string | null;
+
+  // Admin Stage (Final Approval)
+  adminId?: string | null;
+  adminDecision?: 'approved' | 'rejected' | null;
+  adminRemark?: string | null;
+  approvedAt?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+}
+

@@ -11,6 +11,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/firebase/config';
+import { cleanForFirestore } from '@/data/firestore';
 import type { ChatMessage } from '@/types';
 
 const META = 'chat/_meta/channels';
@@ -56,8 +57,9 @@ export const chatRepo = {
     );
   },
   async sendChannelMessage(channelId: string, msg: Omit<ChatMessage, 'id' | 'timestamp'>) {
+    const cleaned = cleanForFirestore(msg as Record<string, any>);
     const ref = await addDoc(collection(db, CHANNELS, channelId, 'messages'), {
-      ...msg,
+      ...cleaned,
       timestamp: serverTimestamp(),
     });
     await setDoc(
@@ -88,15 +90,17 @@ export const chatRepo = {
     );
   },
   async sendDM(dmId: string, msg: Omit<ChatMessage, 'id' | 'timestamp'>) {
+    const cleaned = cleanForFirestore(msg as Record<string, any>);
     const ref = await addDoc(collection(db, 'chat/dms', dmId, 'messages'), {
-      ...msg,
+      ...cleaned,
       timestamp: serverTimestamp(),
     });
     return ref.id;
   },
   async updateMessage(messageId: string, patch: Partial<ChatMessage>) {
     try {
-      await updateDoc(doc(db, 'chat_messages', messageId), patch as Partial<ChatMessage>);
+      const cleaned = cleanForFirestore(patch as Record<string, any>);
+      await updateDoc(doc(db, 'chat_messages', messageId), cleaned);
     } catch (err) {
       console.warn('[chatRepo] updateMessage notice:', err);
     }

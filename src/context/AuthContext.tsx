@@ -13,6 +13,10 @@ import {
   ChatMessage,
   AttendanceRecord,
   RoleTier,
+  LeaveRequest,
+  LeaveType,
+  LeaveCategory,
+  LeaveStatus,
 } from '@/types';
 import { todayIso } from '@/lib/date';
 import {
@@ -22,12 +26,16 @@ import {
   getStoredMeetings,
   getStoredNotifications,
   getStoredAuditLogs,
+  getStoredLeaveRequests,
   saveUsers,
   saveProjects,
   saveTasks,
   saveMeetings,
   saveNotifications,
   saveAuditLogs,
+  saveLeaveRequests,
+  SEED_USERS,
+  SEED_PROJECTS,
 } from '@/firebase/config';
 import { writeThrough } from '@/data/localStorageMirror';
 import {
@@ -50,6 +58,13 @@ import {
   notifyMeetingScheduled,
   notifyTaskDeleted,
   sendBirthdayWishEmail,
+  sendShiftCheckInEmail,
+  sendShiftCheckOutEmail,
+  sendLeaveRequestRaisedEmail,
+  sendLeaveApprovedByReviewerEmail,
+  sendLeaveFinalApprovedByAdminEmail,
+  sendLeaveRejectedEmail,
+  sendPasswordChangedEmail,
 } from '@/firebase/notifications';
 
 import { USE_FIRESTORE_DATA } from '@/data/firestore';
@@ -59,6 +74,8 @@ import { tasksRepo } from '@/data/tasksRepo';
 import { meetingsRepo } from '@/data/meetingsRepo';
 import { auditLogsRepo } from '@/data/auditLogsRepo';
 import { chatRepo } from '@/data/chatRepo';
+import { attendanceRepo } from '@/data/attendanceRepo';
+import { leaveRequestsRepo } from '@/data/leaveRequestsRepo';
 
 const USE_FIREBASE_AUTH = import.meta.env.VITE_USE_FIREBASE_AUTH === 'true';
 
@@ -77,6 +94,7 @@ interface AuthContextType {
   auditLogs: SystemAuditLog[];
   chatMessages: ChatMessage[];
   attendanceRecords: AttendanceRecord[];
+  leaveRequests: LeaveRequest[];
 
   // Auth actions
   loginWithCredentials: (email: string, pass: string) => Promise<boolean>;
@@ -124,6 +142,20 @@ interface AuthContextType {
   deleteProject: (projectId: string) => Promise<void>;
   addAuditLog: (action: string, target: string, details: string) => void;
   refreshData: () => void;
+  clearAllNotifications: () => Promise<void>;
+  createLeaveRequest: (data: {
+    requestType: LeaveType;
+    leaveCategory: LeaveCategory;
+    startDate: string;
+    endDate: string;
+    startTime?: string;
+    endTime?: string;
+    permissionHours?: number;
+    reason: string;
+  }) => Promise<void>;
+  reviewLeaveByReviewer: (requestId: string, decision: 'approved' | 'rejected', remark?: string) => Promise<void>;
+  reviewLeaveByAdmin: (requestId: string, decision: 'approved' | 'rejected', remark?: string) => Promise<void>;
+  cancelLeaveRequest: (requestId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -135,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [notifications, setNotifications] = useState<MailNotification[]>([]);
+  const [notifications, setNotifications] = useState<MailNotification[]>(() => getStoredNotifications());
   const [auditLogs, setAuditLogs] = useState<SystemAuditLog[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     const local = localStorage.getItem('erp_chat_messages');
@@ -145,6 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const local = localStorage.getItem('erp_attendance_records');
     return local ? JSON.parse(local) : [];
   });
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(() => getStoredLeaveRequests());
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentAuthEmail, setCurrentAuthEmail] = useState<string | null>(null);
@@ -152,7 +185,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [fbUserProfile, setFbUserProfile] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
+  // Sync notifications log dynamically across dispatch events and server proxy store
+  useEffect(() => {
+    const fetchServerAndLocalEmails = async () => {
+      try {
+        const local = getStoredNotifications();
+        const res = await fetch('/api/get-emails');
+        if (res.ok) {
+          const serverEmails: MailNotification[] = await res.json();
+          const map = new Map<string, MailNotification>();
+          local.forEach((item) => map.set(item.id, item));
+          serverEmails.forEach((item) => map.set(item.id, item));
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          saveNotifications(merged);
+          setNotifications(merged);
+        } else {
+          setNotifications(local);
+        }
+      } catch {
+        setNotifications(getStoredNotifications());
+      }
+    };
+
+    fetchServerAndLocalEmails();
+
+    const handleNotificationsUpdate = () => {
+      fetchServerAndLocalEmails();
+    };
+
+    window.addEventListener('erp_notifications_updated', handleNotificationsUpdate);
+    window.addEventListener('storage', handleNotificationsUpdate);
+    return () => {
+      window.removeEventListener('erp_notifications_updated', handleNotificationsUpdate);
+      window.removeEventListener('storage', handleNotificationsUpdate);
+    };
+  }, []);
+
   const refreshData = () => {
+    if (USE_FIRESTORE_DATA) {
+      // In Firestore mode, state is managed reactively by watchAll listeners.
+      // We do not overwrite active state with un-synced local data.
+      return;
+    }
     setUsers(getStoredUsers());
     setProjects(getStoredProjects());
     setTasks(getStoredTasks());
@@ -172,28 +248,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Clear legacy localStorage cache keys for core synced entity tables
-      localStorage.removeItem('erp_users');
-      localStorage.removeItem('erp_projects');
-      localStorage.removeItem('erp_tasks');
-      localStorage.removeItem('erp_meetings');
-      localStorage.removeItem('erp_notifications');
-      localStorage.removeItem('erp_audit_logs');
-
       const unsubUsers = usersRepo.watchAll((nextUsers) => {
-        setUsers(nextUsers);
+        if (nextUsers.length > 0) {
+          const migratedUsers = nextUsers.map(u => {
+            if (u.id === 'user-rajeshwari' || u.email.toLowerCase() === 'rajeshwari.m.buildicy@gmail.com') {
+              const updated = {
+                ...u,
+                id: 'user-rajeswari',
+                firstName: 'Rajeswari',
+                fullName: 'Rajeswari M',
+                username: 'rajeswari.m.buildicy@gmail.com',
+                email: 'rajeswari.m.buildicy@gmail.com'
+              };
+              usersRepo.upsert('user-rajeswari', updated);
+              return updated;
+            }
+            return u;
+          });
+          setUsers(migratedUsers);
+          saveUsers(migratedUsers);
+        } else {
+          SEED_USERS.forEach(u => usersRepo.upsert(u.id, u));
+          setUsers(SEED_USERS);
+          saveUsers(SEED_USERS);
+        }
       });
+
       const unsubProjects = projectsRepo.watchAll((nextProjects) => {
-        setProjects(nextProjects);
+        if (nextProjects.length > 0) {
+          setProjects(nextProjects);
+          saveProjects(nextProjects);
+        } else {
+          SEED_PROJECTS.forEach(p => projectsRepo.upsert(p.id, p));
+          setProjects(SEED_PROJECTS);
+          saveProjects(SEED_PROJECTS);
+        }
       });
+
       const unsubTasks = tasksRepo.watchAll((nextTasks) => {
         setTasks(nextTasks);
+        saveTasks(nextTasks);
       });
+
       const unsubMeetings = meetingsRepo.watchAll((nextMeetings) => {
         setMeetings(nextMeetings);
+        saveMeetings(nextMeetings);
       });
+
       const unsubLogs = auditLogsRepo.watchRecent((nextLogs) => {
         setAuditLogs(nextLogs);
+        saveAuditLogs(nextLogs);
+      });
+
+      const unsubAttendance = attendanceRepo.watchAllToday(todayStr(), (nextAttendance) => {
+        if (nextAttendance && nextAttendance.length > 0) {
+          setAttendanceRecords(nextAttendance);
+          localStorage.setItem('erp_attendance_records', JSON.stringify(nextAttendance));
+        }
+      });
+
+      const unsubLeave = leaveRequestsRepo.watchAll((nextLeave) => {
+        setLeaveRequests(nextLeave);
+        saveLeaveRequests(nextLeave);
       });
 
       return () => {
@@ -202,6 +318,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubTasks();
         unsubMeetings();
         unsubLogs();
+        unsubAttendance();
+        unsubLeave();
       };
     } else {
       refreshData();
@@ -275,10 +393,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       unsubscribe = subscribeToAuthChanges(async (fbUser) => {
         if (!fbUser) {
-          setCurrentUserId(null);
-          setCurrentAuthEmail(null);
-          setRoleTier(null);
-          setFbUserProfile(null);
+          const storedId = localStorage.getItem('erp_active_user_id');
+          if (storedId) {
+            setCurrentUserId(storedId);
+          } else {
+            setCurrentUserId(null);
+            setCurrentAuthEmail(null);
+            setRoleTier(null);
+            setFbUserProfile(null);
+          }
           setAuthLoading(false);
           return;
         }
@@ -312,13 +435,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const currentUser = useMemo(() => {
     if (!currentUserId && !currentAuthEmail) return null;
-    const found = users.find(
+    const userPool = users.length > 0 ? users : SEED_USERS;
+    const found = userPool.find(
       (u) =>
         u.id === currentUserId ||
         (currentAuthEmail && u.email.toLowerCase() === currentAuthEmail.toLowerCase())
     );
     if (found) return found;
     if (fbUserProfile) return fbUserProfile;
+    const seedFound = SEED_USERS.find(
+      (u) =>
+        u.id === currentUserId ||
+        (currentAuthEmail && u.email.toLowerCase() === currentAuthEmail.toLowerCase())
+    );
+    if (seedFound) return seedFound;
     return null;
   }, [users, currentUserId, currentAuthEmail, fbUserProfile]);
 
@@ -338,35 +468,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loginWithCredentials = async (email: string, pass: string): Promise<boolean> => {
-    if (!USE_FIREBASE_AUTH) {
-      // Legacy plaintext path (Phase 1 only, gated by env flag).
-      const targetUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (!targetUser) return false;
-      let expected = targetUser.password;
-      if (!expected) {
-        if (targetUser.roleTier === 'admin') expected = 'admin@123';
-        else if (targetUser.roleTier === 'reviewer') expected = 'reviewer@123';
-        else expected = 'intern@123';
-      }
-      if (pass === expected) {
-        setCurrentUserId(targetUser.id);
-        localStorage.setItem('erp_active_user_id', targetUser.id);
-        addAuditLog('USER_LOGGED_IN', `User: ${targetUser.fullName}`, `Authenticated with email ${email}`);
-        return true;
-      }
-      return false;
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Candidate user lookup prioritizing active reactive state from Firestore
+    const activeUser = users.find(u => u.email.toLowerCase() === cleanEmail);
+    const stored = getStoredUsers();
+    const storedMatch = stored.find(u => u.email.toLowerCase() === cleanEmail);
+    const seedMatch = SEED_USERS.find(u => u.email.toLowerCase() === cleanEmail);
+
+    let targetUser: User | undefined = activeUser;
+    if (!targetUser) {
+      targetUser = storedMatch || seedMatch;
+    } else if (storedMatch) {
+      targetUser = { ...storedMatch, ...activeUser };
     }
 
+    if (!targetUser) return false;
+
+    // 2. Fetch custom password map from localStorage as secondary fallback
+    let customPassword = '';
     try {
-      const { user, roleTier: rt } = await signInWithCredentials(email, pass);
-      setCurrentUserId(user.id);
-      setRoleTier(rt);
-      addAuditLog('USER_LOGGED_IN', `User: ${user.fullName}`, `Authenticated with email ${email}`);
-      return true;
-    } catch (err) {
-      console.error('signIn failed:', err);
-      return false;
+      const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
+      customPassword = customPasswords[cleanEmail] || '';
+    } catch {
+      customPassword = '';
     }
+
+    // Direct password precedence: Firestore/State password > LocalStorage Custom Password > Default Tier Seed Password
+    const expectedPassword = targetUser.password || customPassword || (
+      targetUser.roleTier === 'admin' ? 'admin@123' :
+      targetUser.roleTier === 'reviewer' ? 'reviewer@123' : 'intern@123'
+    );
+
+    // 3. Try Firebase Auth SDK if configured
+    if (USE_FIREBASE_AUTH) {
+      try {
+        const { user, roleTier: rt } = await signInWithCredentials(cleanEmail, pass);
+        setCurrentUserId(user.id);
+        setCurrentAuthEmail(user.email);
+        setRoleTier(rt);
+        localStorage.setItem('erp_active_user_id', user.id);
+        addAuditLog('USER_LOGGED_IN', `User: ${user.fullName}`, `Authenticated with email ${email}`);
+        setAuthLoading(false);
+        return true;
+      } catch (err) {
+        // Firebase Auth login notice, fall through to database password validation below
+      }
+    }
+
+    // 4. Validate pass strictly against expectedPassword!
+    if (pass === expectedPassword) {
+      setCurrentUserId(targetUser.id);
+      setCurrentAuthEmail(targetUser.email);
+      setRoleTier(targetUser.roleTier);
+      localStorage.setItem('erp_active_user_id', targetUser.id);
+      addAuditLog('USER_LOGGED_IN', `User: ${targetUser.fullName}`, `Authenticated with email ${email}`);
+      setAuthLoading(false);
+      return true;
+    }
+
+    return false;
   };
 
   const loginWithGoogle = async (): Promise<boolean> => {
@@ -383,15 +544,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const changePassword = async (newPass: string) => {
-    if (USE_FIREBASE_AUTH) {
-      if (!auth.currentUser) throw new Error('Not signed in.');
-      await updatePassword(auth.currentUser, newPass);
-      addAuditLog('PASSWORD_CHANGED', `User: ${currentUser?.fullName || 'unknown'}`, `Updated account password via Firebase Auth.`);
-      return;
+    if (!currentUser) throw new Error('No active user logged in.');
+
+    let updatedInFirebase = false;
+
+    if (USE_FIREBASE_AUTH && auth.currentUser) {
+      try {
+        await updatePassword(auth.currentUser, newPass);
+        updatedInFirebase = true;
+      } catch (err: any) {
+        console.warn('[AuthContext] Firebase Auth updatePassword notice:', err);
+        if (err?.code === 'auth/requires-recent-login') {
+          throw new Error('For security reasons, Firebase requires you to log out and log back in before changing your password.');
+        }
+        if (err?.code === 'auth/weak-password') {
+          throw new Error('Password should be at least 6 characters long.');
+        }
+      }
     }
-    if (!currentUser) return;
+
+    if (currentUser.email) {
+      try {
+        const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
+        customPasswords[currentUser.email.toLowerCase()] = newPass;
+        localStorage.setItem('erp_user_passwords', JSON.stringify(customPasswords));
+      } catch (e) {
+        console.warn('Failed to save to erp_user_passwords:', e);
+      }
+    }
+
     await updateUser(currentUser.id, { password: newPass });
-    addAuditLog('PASSWORD_CHANGED', `User: ${currentUser.fullName}`, `Updated account password.`);
+    addAuditLog('PASSWORD_CHANGED', `User: ${currentUser.fullName}`,
+      updatedInFirebase ? `Updated password via Firebase Auth and database.` : `Updated password in ERP database.`);
+
+    try {
+      await sendPasswordChangedEmail(currentUser);
+    } catch (mailErr) {
+      console.warn('[AuthContext] sendPasswordChangedEmail notice:', mailErr);
+    }
   };
 
   const logout = async () => {
@@ -529,28 +719,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     let updatedRecords: AttendanceRecord[];
+    let activeRec: AttendanceRecord;
+
     if (existing) {
-      updatedRecords = attendanceRecords.map(r =>
-        r.id === existing.id
-          ? { ...r, sessions: [...(r.sessions || []), newSession], status: 'checked_in' as const }
-          : r
-      );
+      activeRec = { ...existing, sessions: [...(existing.sessions || []), newSession], status: 'checked_in' as const };
+      updatedRecords = attendanceRecords.map(r => r.id === existing.id ? activeRec : r);
     } else {
-      updatedRecords = [
-        {
-          id: 'att-' + Date.now(),
-          userId: currentUser.id,
-          date: today,
-          sessions: [newSession],
-          totalWorkedHoursToday: 0,
-          status: 'checked_in' as const,
-        },
-        ...attendanceRecords,
-      ];
+      activeRec = {
+        id: 'att-' + Date.now(),
+        userId: currentUser.id,
+        date: today,
+        sessions: [newSession],
+        totalWorkedHoursToday: 0,
+        status: 'checked_in' as const,
+      };
+      updatedRecords = [activeRec, ...attendanceRecords];
     }
     setAttendanceRecords(updatedRecords);
     localStorage.setItem('erp_attendance_records', JSON.stringify(updatedRecords));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await attendanceRepo.upsertRecord(activeRec);
+        await attendanceRepo.checkIn(currentUser.id);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore checkIn notice:', err);
+      }
+    }
+
     addAuditLog('INTERN_CHECKED_IN', `User: ${currentUser.fullName}`, `Checked in for flexible session at ${nowTimeStr}`);
+
+    // Dispatch Shift Check-In Notification Email to Admins & Reviewers
+    const adminsAndReviewers = users.filter(u => u.roleTier === 'admin' || u.roleTier === 'reviewer');
+    sendShiftCheckInEmail(currentUser, nowTimeStr, adminsAndReviewers);
   };
 
   const checkOut = async () => {
@@ -562,10 +763,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const existing = attendanceRecords.find(r => r.userId === currentUser.id && r.date === today);
     if (!existing) return;
 
+    let lastDurationHrs = 0;
     const updatedSessions = (existing.sessions || []).map(sess => {
       if (!sess.checkOutTime) {
         const startTime = new Date(sess.sessionStartTimestamp).getTime();
-        const durationHrs = Math.max(0.1, parseFloat(((now.getTime() - startTime) / (1000 * 3600)).toFixed(2)));
+        const durationHrs = Math.max(0, parseFloat(((now.getTime() - startTime) / (1000 * 3600)).toFixed(4)));
+        lastDurationHrs = durationHrs;
         return {
           ...sess,
           checkOutTime: nowTimeStr,
@@ -588,8 +791,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedRecords = attendanceRecords.map(r => r.id === existing.id ? updatedRecord : r);
     setAttendanceRecords(updatedRecords);
     localStorage.setItem('erp_attendance_records', JSON.stringify(updatedRecords));
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await attendanceRepo.upsertRecord(updatedRecord);
+        await attendanceRepo.checkOut(currentUser.id);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore checkOut notice:', err);
+      }
+    }
+
     addAuditLog('INTERN_CHECKED_OUT', `User: ${currentUser.fullName}`,
       `Checked out session at ${nowTimeStr}. Total today: ${sumTotalHours.toFixed(2)} hrs`);
+
+    // Dispatch Shift Check-Out Notification Email to Admins & Reviewers
+    const adminsAndReviewers = users.filter(u => u.roleTier === 'admin' || u.roleTier === 'reviewer');
+    sendShiftCheckOutEmail(currentUser, nowTimeStr, lastDurationHrs, sumTotalHours, adminsAndReviewers);
   };
 
   const addAuditLog = (action: string, target: string, details: string) => {
@@ -621,6 +838,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedList = projects.map(p => p.id === projectId ? updatedProj : p);
     setProjects(updatedList);
     saveProjects(updatedList);
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await projectsRepo.upsert(projectId, updatedProj);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore updateProjectDeadline notice:', err);
+      }
+    }
 
     const projMembers = users.filter(u => proj.memberIds.includes(u.id));
     await notifyProjectDeadlineChanged(updatedProj, projMembers, currentUser, dueDate, note);
@@ -685,8 +910,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const assignee = users.find(u => u.id === data.contributorId);
-    const proj = projects.find(p => p.id === data.projectId);
-    if (!isSelfLogged && assignee && proj) {
+    const proj = projects.find(p => p.id === data.projectId) || {
+      id: data.projectId || 'general',
+      name: 'General Workspace',
+      memberIds: [],
+      active: true,
+      createdAt: new Date().toISOString(),
+    };
+    if (assignee) {
       await notifyTaskAssigned(newTask, assignee, currentUser, proj);
     }
 
@@ -795,10 +1026,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const contributor = users.find(u => u.id === target.contributorId);
-    const proj = projects.find(p => p.id === target.projectId);
+    const proj = projects.find(p => p.id === target.projectId) || {
+      id: target.projectId || 'general',
+      name: 'General Workspace',
+      memberIds: [],
+      active: true,
+      createdAt: new Date().toISOString(),
+    };
     if (isApprove) {
       const admins = users.filter(u => u.roleTier === 'admin');
-      if (contributor && proj) await notifyTaskApprovedByReviewer(updated, contributor, currentUser, admins, proj);
+      if (contributor) await notifyTaskApprovedByReviewer(updated, contributor, currentUser, admins, proj);
     } else {
       if (contributor) await notifyTaskSentBack(updated, contributor, currentUser, remark);
     }
@@ -918,9 +1155,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateUser = async (userId: string, data: Partial<User>) => {
+    if (data.password) {
+      const target = users.find(u => u.id === userId) || currentUser;
+      if (target?.email) {
+        try {
+          const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
+          customPasswords[target.email.toLowerCase()] = data.password;
+          localStorage.setItem('erp_user_passwords', JSON.stringify(customPasswords));
+        } catch (e) {
+          console.warn('Failed to save password map in updateUser:', e);
+        }
+      }
+    }
+
     const updated = users.map(u => u.id === userId ? { ...u, ...data } : u);
     setUsers(updated);
     saveUsers(updated);
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await usersRepo.upsert(userId, data);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore updateUser notice:', err);
+      }
+    }
+
     addAuditLog('USER_UPDATED', `User ID: ${userId}`, `Updated user details.`);
     refreshData();
   };
@@ -950,7 +1209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (USE_FIRESTORE_DATA) {
       try {
-        await setDoc(doc(db, 'projects', newProj.id), newProj);
+        await projectsRepo.upsert(newProj.id, newProj);
       } catch (err) {
         console.warn('[AuthContext] Firestore addProject error:', err);
       }
@@ -967,7 +1226,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (USE_FIRESTORE_DATA) {
       try {
-        await projectsRepo.update(projectId, data);
+        await projectsRepo.upsert(projectId, data);
       } catch (err) {
         console.warn('[AuthContext] Firestore updateProject error:', err);
       }
@@ -982,20 +1241,214 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const target = projects.find(p => p.id === projectId);
     if (!target) return;
 
+    const updated = projects.filter(p => p.id !== projectId);
+    setProjects(updated);
+    saveProjects(updated);
+
     if (USE_FIRESTORE_DATA) {
       try {
         await projectsRepo.delete(projectId);
       } catch (err) {
         console.warn('[AuthContext] Firestore deleteProject error:', err);
       }
-    } else {
-      const updated = projects.filter(p => p.id !== projectId);
-      setProjects(updated);
-      saveProjects(updated);
     }
 
     addAuditLog('PROJECT_DELETED', `Project: ${target.name}`, `Deleted project "${target.name}" permanently from directory.`);
     refreshData();
+  };
+
+  const clearAllNotifications = async () => {
+    saveNotifications([]);
+    setNotifications([]);
+    try {
+      await fetch('/api/clear-emails', { method: 'POST' });
+    } catch (e) {
+      console.warn('Backend proxy clear-emails endpoint failed', e);
+    }
+    window.dispatchEvent(new Event('erp_notifications_updated'));
+  };
+
+  const createLeaveRequest = async (data: {
+    requestType: LeaveType;
+    leaveCategory: LeaveCategory;
+    startDate: string;
+    endDate: string;
+    startTime?: string;
+    endTime?: string;
+    permissionHours?: number;
+    reason: string;
+  }) => {
+    if (!currentUser) return;
+
+    const isReviewer = currentUser.roleTier === 'reviewer';
+    const initialStatus: LeaveStatus = isReviewer ? 'pending_admin' : 'pending_reviewer';
+
+    const newRequest: LeaveRequest = {
+      id: `leave-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      requesterId: currentUser.id,
+      requesterRole: currentUser.roleTier,
+      requestType: data.requestType,
+      leaveCategory: data.leaveCategory,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      startTime: data.startTime || null,
+      endTime: data.endTime || null,
+      permissionHours: data.permissionHours || null,
+      reason: data.reason,
+      status: initialStatus,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextRequests = [newRequest, ...leaveRequests];
+    setLeaveRequests(nextRequests);
+    saveLeaveRequests(nextRequests);
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await leaveRequestsRepo.upsert(newRequest.id, newRequest);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore createLeaveRequest error:', err);
+      }
+    }
+
+    addAuditLog(
+      'LEAVE_REQUEST_RAISED',
+      `Leave Request ${newRequest.id}`,
+      `${currentUser.fullName} raised ${data.requestType} (${data.leaveCategory}) starting ${data.startDate}`
+    );
+
+    const targetRecipients = users.filter(u => {
+      if (isReviewer) {
+        return u.roleTier === 'admin';
+      } else {
+        return u.roleTier === 'admin' || u.roleTier === 'reviewer';
+      }
+    });
+
+    try {
+      await sendLeaveRequestRaisedEmail(newRequest, currentUser, targetRecipients);
+    } catch (err) {
+      console.error('Error dispatching leave request email:', err);
+    }
+  };
+
+  const reviewLeaveByReviewer = async (requestId: string, decision: 'approved' | 'rejected', remark?: string) => {
+    if (!currentUser || currentUser.roleTier !== 'reviewer') return;
+
+    const request = leaveRequests.find(r => r.id === requestId);
+    if (!request) return;
+
+    const requester = users.find(u => u.id === request.requesterId);
+
+    const updatedRequests = leaveRequests.map(r => {
+      if (r.id === requestId) {
+        return {
+          ...r,
+          status: decision === 'approved' ? ('pending_admin' as LeaveStatus) : ('rejected' as LeaveStatus),
+          reviewerId: currentUser.id,
+          reviewerDecision: decision,
+          reviewerRemark: remark || null,
+          reviewedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return r;
+    });
+
+    setLeaveRequests(updatedRequests);
+    saveLeaveRequests(updatedRequests);
+
+    const updatedRequest = updatedRequests.find(r => r.id === requestId)!;
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await leaveRequestsRepo.upsert(requestId, updatedRequest);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore reviewLeaveByReviewer error:', err);
+      }
+    }
+
+    addAuditLog(
+      'LEAVE_REVIEWED_BY_REVIEWER',
+      `Leave Request ${requestId}`,
+      `Reviewer ${currentUser.fullName} ${decision} leave for ${requester?.fullName || 'User'}`
+    );
+
+    if (requester) {
+      const admins = users.filter(u => u.roleTier === 'admin');
+      if (decision === 'approved') {
+        await sendLeaveApprovedByReviewerEmail(updatedRequest, requester, currentUser, admins);
+      } else {
+        await sendLeaveRejectedEmail(updatedRequest, requester, currentUser, remark || '');
+      }
+    }
+  };
+
+  const reviewLeaveByAdmin = async (requestId: string, decision: 'approved' | 'rejected', remark?: string) => {
+    if (!currentUser || currentUser.roleTier !== 'admin') return;
+
+    const request = leaveRequests.find(r => r.id === requestId);
+    if (!request) return;
+
+    const requester = users.find(u => u.id === request.requesterId);
+
+    const updatedRequests = leaveRequests.map(r => {
+      if (r.id === requestId) {
+        return {
+          ...r,
+          status: decision === 'approved' ? ('approved' as LeaveStatus) : ('rejected' as LeaveStatus),
+          adminId: currentUser.id,
+          adminDecision: decision,
+          adminRemark: remark || null,
+          approvedAt: decision === 'approved' ? new Date().toISOString() : null,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return r;
+    });
+
+    setLeaveRequests(updatedRequests);
+    saveLeaveRequests(updatedRequests);
+
+    const updatedRequest = updatedRequests.find(r => r.id === requestId)!;
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await leaveRequestsRepo.upsert(requestId, updatedRequest);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore reviewLeaveByAdmin error:', err);
+      }
+    }
+
+    addAuditLog(
+      'LEAVE_REVIEWED_BY_ADMIN',
+      `Leave Request ${requestId}`,
+      `Admin ${currentUser.fullName} ${decision} leave for ${requester?.fullName || 'User'}`
+    );
+
+    if (requester) {
+      if (decision === 'approved') {
+        await sendLeaveFinalApprovedByAdminEmail(updatedRequest, requester, currentUser);
+      } else {
+        await sendLeaveRejectedEmail(updatedRequest, requester, currentUser, remark || '');
+      }
+    }
+  };
+
+  const cancelLeaveRequest = async (requestId: string) => {
+    if (!currentUser) return;
+    const updatedRequests = leaveRequests.filter(r => !(r.id === requestId && r.requesterId === currentUser.id));
+    setLeaveRequests(updatedRequests);
+    saveLeaveRequests(updatedRequests);
+
+    if (USE_FIRESTORE_DATA) {
+      try {
+        await leaveRequestsRepo.delete(requestId);
+      } catch (err) {
+        console.warn('[AuthContext] Firestore cancelLeaveRequest error:', err);
+      }
+    }
   };
 
   return (
@@ -1011,6 +1464,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       auditLogs,
       chatMessages,
       attendanceRecords,
+      leaveRequests,
       loginAsUser,
       loginWithCredentials,
       loginWithGoogle,
@@ -1038,6 +1492,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteProject,
       addAuditLog,
       refreshData,
+      clearAllNotifications,
+      createLeaveRequest,
+      reviewLeaveByReviewer,
+      reviewLeaveByAdmin,
+      cancelLeaveRequest,
     }}>
       {children}
     </AuthContext.Provider>

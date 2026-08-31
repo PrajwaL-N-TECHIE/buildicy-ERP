@@ -16,11 +16,14 @@ const PATH = 'meetings';
 export const meetingsRepo = {
   watchAll(cb: (meetings: Meeting[]) => void, extra: QueryConstraint[] = []) {
     return onSnapshot(
-      query(collection(db, PATH), orderBy('scheduledAt', 'asc'), ...extra),
-      (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting))),
+      query(collection(db, PATH), ...extra),
+      (snap) => {
+        const meetings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting));
+        meetings.sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime());
+        cb(meetings);
+      },
       (err) => {
         console.warn('[meetingsRepo] watchAll listener notice:', err.message);
-        cb([]);
       }
     );
   },

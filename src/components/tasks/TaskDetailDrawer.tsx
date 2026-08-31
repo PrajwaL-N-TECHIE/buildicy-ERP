@@ -69,7 +69,7 @@ export const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ task, open, 
         <div className="flex-1 overflow-y-auto space-y-5 py-4 pr-1 text-xs">
           
           {/* Metadata Cards Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Contributor</span>
               <div className="flex items-center space-x-2">
@@ -88,13 +88,6 @@ export const TaskDetailDrawer: React.FC<TaskDetailDrawerProps> = ({ task, open, 
               <span className="font-bold text-slate-900 block text-xs">
                 {assigner ? assigner.fullName : 'Self-logged'}
               </span>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
-                {task.status === 'Not Started' || task.status === 'In Progress' ? 'Allocated Hours' : 'Logged Hours'}
-              </span>
-              <span className="font-bold text-slate-900 block text-xs">{task.hours} hrs</span>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">

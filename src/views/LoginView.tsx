@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { useAuth, USE_FIREBASE_AUTH } from '@/auth/AuthContext';
-import { useLegacyAuth } from '@/auth/useLegacyAuth';
+import { useAuth } from '@/context/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db, getStoredUsers } from '@/firebase/config';
+import { db, getStoredUsers, SEED_USERS } from '@/firebase/config';
 import { User } from '@/types';
 import { sendForgotPasswordEmail } from '@/firebase/notifications';
 import { Button } from '@/components/ui/button';
@@ -32,34 +31,27 @@ import { useToast } from '@/context/ToastContext';
 
 export const LoginView: React.FC = () => {
   const toast = useToast();
-  const newAuth = USE_FIREBASE_AUTH ? useAuth() : null;
-  const legacyAuth = USE_FIREBASE_AUTH ? null : useLegacyAuth();
-
-  const login = newAuth ? newAuth.login : null;
-  const loginWithCredentials = legacyAuth ? legacyAuth.loginWithCredentials : null;
+  const { loginWithCredentials, loginWithGoogle } = useAuth();
   const userList: User[] = getStoredUsers();
 
-  const [email, setEmail] = useState<string>('admin@buildicy.com');
-  const [password, setPassword] = useState<string>('admin@123');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [rememberMe, setRememberMe] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState<boolean>(false);
 
-  const loginWithGoogle = newAuth?.loginWithGoogle;
-
   const handleGoogleSignIn = async () => {
     setErrorMsg('');
     setIsGoogleSubmitting(true);
     try {
-      if (USE_FIREBASE_AUTH && loginWithGoogle) {
+      if (loginWithGoogle) {
         await loginWithGoogle();
       } else {
-        // Fallback for demo environment when Firebase Auth is toggled off
         const demoAdmin = userList.find(u => u.email === 'admin@buildicy.com') || userList[0];
-        if (demoAdmin && legacyAuth) {
-          legacyAuth.loginWithCredentials(demoAdmin.email, demoAdmin.password || 'admin@123');
+        if (demoAdmin && loginWithCredentials) {
+          await loginWithCredentials(demoAdmin.email, demoAdmin.password || 'admin@123');
         }
       }
     } catch (err: any) {
@@ -90,16 +82,13 @@ export const LoginView: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      if (USE_FIREBASE_AUTH && login) {
-        await login(email.trim(), password);
-      } else if (loginWithCredentials) {
-        const success = await loginWithCredentials(email.trim(), password.trim());
-        if (!success) {
-          setErrorMsg('Invalid email or password. Please verify credentials.');
-        }
+      const loggedIn = await loginWithCredentials(email.trim(), password.trim());
+      if (!loggedIn) {
+        setErrorMsg('Invalid email or password. Please verify credentials.');
       }
-    } catch (err) {
-      const code = (err as { code?: string })?.code;
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      const code = err?.code;
       const msg =
         code === 'auth/invalid-credential'
           ? 'Invalid email or password. Please verify credentials.'
@@ -135,79 +124,7 @@ export const LoginView: React.FC = () => {
 
       // 2. Search in default system user database
       if (!matchedUser) {
-        const defaultAccounts: User[] = [
-          {
-            id: 'user-admin-default',
-            firstName: 'Admin',
-            lastName: 'Founder',
-            fullName: 'Founder/Admin',
-            username: 'admin@buildicy.com',
-            email: 'admin@buildicy.com',
-            title: 'Managing Director & Founder',
-            roleTier: 'admin',
-            password: 'admin@123',
-            projectIds: [],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'user-reviewer-default',
-            firstName: 'Reviewer',
-            lastName: 'Lead',
-            fullName: 'Technical Reviewer',
-            username: 'reviewer@buildicy.com',
-            email: 'reviewer@buildicy.com',
-            title: 'Senior QA Reviewer',
-            roleTier: 'reviewer',
-            password: 'reviewer@123',
-            projectIds: [],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'user-intern-default',
-            firstName: 'Intern',
-            lastName: 'Contributor',
-            fullName: 'Buildicy Intern',
-            username: 'intern@buildicy.com',
-            email: 'intern@buildicy.com',
-            title: 'Software Engineer Intern',
-            roleTier: 'contributor',
-            password: 'intern@123',
-            projectIds: [],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'user-rajeshwari',
-            firstName: 'Rajeshwari',
-            lastName: 'SDE',
-            fullName: 'Rajeshwari SDE',
-            username: 'rajeshwari@buildicy.com',
-            email: 'rajeshwari@buildicy.com',
-            title: 'Full Stack Engineer',
-            roleTier: 'contributor',
-            password: 'rajeshwari@123',
-            projectIds: [],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'user-prajwal',
-            firstName: 'Prajwal',
-            lastName: 'N',
-            fullName: 'Prajwal N (System Admin)',
-            username: 'prajwalgenious@gmail.com',
-            email: 'prajwalgenious@gmail.com',
-            title: 'Lead Architect & Systems Admin',
-            roleTier: 'admin',
-            password: 'prajwal@123',
-            projectIds: [],
-            active: true,
-            createdAt: new Date().toISOString()
-          }
-        ];
-        matchedUser = defaultAccounts.find(u => u.email.toLowerCase() === targetEmail);
+        matchedUser = SEED_USERS.find(u => u.email.toLowerCase() === targetEmail);
       }
 
       // 3. Search Firestore DB if connected
@@ -234,7 +151,8 @@ export const LoginView: React.FC = () => {
       }
 
       // IF USER EXISTS IN DB -> DISPATCH PASSWORD RECOVERY EMAIL
-      const passStr = matchedUser.password || (matchedUser.roleTier === 'admin' ? 'admin@123' : matchedUser.roleTier === 'reviewer' ? 'reviewer@123' : 'prajwal@123');
+      const customPasswords = JSON.parse(localStorage.getItem('erp_user_passwords') || '{}');
+      const passStr = customPasswords[targetEmail] || matchedUser.password || (matchedUser.roleTier === 'admin' ? 'admin@123' : matchedUser.roleTier === 'reviewer' ? 'reviewer@123' : 'intern@123');
 
       const res = await sendForgotPasswordEmail(matchedUser, passStr);
       if (res && res.success === false) {
@@ -296,7 +214,7 @@ export const LoginView: React.FC = () => {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="Email address"
+                    placeholder="Enter your email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="h-12 text-sm border-slate-300 rounded-2xl focus-visible:ring-purple-600 px-4 placeholder:text-slate-400 font-medium shadow-2xs"
@@ -314,7 +232,7 @@ export const LoginView: React.FC = () => {
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Password"
+                    placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-12 text-sm border-slate-300 rounded-2xl focus-visible:ring-purple-600 pl-4 pr-12 placeholder:text-slate-400 font-medium shadow-2xs"

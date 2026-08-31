@@ -7,13 +7,11 @@ import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
 import { ProjectList } from '@/components/projects/ProjectList';
 import { MeetingList } from '@/components/meetings/MeetingList';
 import { PeopleManagement } from '@/components/admin/PeopleManagement';
-import { ProjectManagement } from '@/components/admin/ProjectManagement';
-import { AnalyticsDashboard } from '@/components/admin/AnalyticsDashboard';
-import { AuditLogViewer } from '@/components/admin/AuditLogViewer';
 import { ChatLogsViewer } from '@/components/admin/ChatLogsViewer';
 import { SentEmailsLogViewer } from '@/components/admin/SentEmailsLogViewer';
 import { TeamChatView } from '@/components/chat/TeamChatView';
 import { AttendanceTracker } from '@/components/attendance/AttendanceTracker';
+import { LeaveManagementView } from '@/components/leave/LeaveManagementView';
 import { HRHubView } from '@/components/hr/HRHubView';
 import { LoginView } from '@/views/LoginView';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -50,6 +48,8 @@ export const DashboardView: React.FC = () => {
         return <TeamChatView />;
       case 'attendance':
         return <AttendanceTracker />;
+      case 'leave-management':
+        return <LeaveManagementView />;
       case 'review-queue':
         return (
           <div className="space-y-4">
@@ -79,22 +79,18 @@ export const DashboardView: React.FC = () => {
           </div>
         );
       case 'projects':
-        return <ProjectList onOpenProjectManagement={() => setActiveTab('project-mgmt')} />;
+        return <ProjectList />;
       case 'meetings':
         return <MeetingList />;
       case 'hr-hub':
       case 'people':
         return <HRHubView />;
-      case 'project-mgmt':
-        return <ProjectManagement />;
       case 'analytics':
         return <ExecutiveOverview />;
       case 'chat-logs':
         return <ChatLogsViewer />;
       case 'sent-emails':
         return <SentEmailsLogViewer />;
-      case 'audit-logs':
-        return <AuditLogViewer />;
       default:
         return <TaskList onOpenCreateTask={() => setIsTaskFormOpen(true)} />;
     }

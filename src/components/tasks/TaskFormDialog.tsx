@@ -84,16 +84,16 @@ export const TaskFormDialog: React.FC<TaskFormDialogProps> = ({ open, onOpenChan
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col p-6 bg-white border border-slate-200 shadow-xl rounded-2xl">
+      <DialogContent className="sm:max-w-xl md:max-w-2xl w-[92vw] max-h-[90vh] flex flex-col p-6 bg-white border border-slate-200 shadow-2xl rounded-2xl">
         
         {/* Header */}
-        <DialogHeader className="pb-3 border-b border-slate-100 pr-6 shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2.5 bg-purple-100 text-purple-700 rounded-xl">
-              <PlusCircle className="w-5 h-5" />
+        <DialogHeader className="pb-4 border-b border-slate-100 pr-6 shrink-0">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-purple-100 text-purple-700 rounded-xl">
+              <PlusCircle className="w-6 h-6" />
             </div>
             <div>
-              <DialogTitle className="text-base font-bold text-slate-900">
+              <DialogTitle className="text-lg font-bold text-slate-900">
                 {isAssigning ? 'Assign Task to Team Member' : 'Log Daily Task Entry'}
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500 font-normal">
@@ -104,20 +104,20 @@ export const TaskFormDialog: React.FC<TaskFormDialogProps> = ({ open, onOpenChan
         </DialogHeader>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto pr-1 space-y-4 py-3 text-xs">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto pr-1 space-y-5 py-3 text-xs">
           
           {/* Contributor Selection (if Assigning) */}
           {isAssigning && (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-slate-900">Assignee (Contributor / Intern)</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-bold text-slate-900">Assignee (Contributor / Intern / Teammate)</Label>
               <Select value={contributorId} onValueChange={setContributorId}>
-                <SelectTrigger className="h-9 text-xs border-slate-300 rounded-xl font-medium">
+                <SelectTrigger className="h-11 text-sm border-slate-300 rounded-xl font-medium px-3.5 focus:ring-2 focus:ring-purple-500">
                   <SelectValue placeholder="Select Contributor" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60 overflow-y-auto">
                   {availableContributors.map(c => (
-                    <SelectItem key={c.id} value={c.id} className="text-xs font-medium">
-                      {c.fullName} ({c.title})
+                    <SelectItem key={c.id} value={c.id} className="text-xs sm:text-sm font-medium py-2">
+                      {c.fullName} ({c.title}) — {c.email}
                     </SelectItem>
                   ))}
                 </SelectContent>

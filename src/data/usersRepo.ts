@@ -6,6 +6,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/firebase/config';
+import { cleanForFirestore } from '@/data/firestore';
 import type { User } from '@/types';
 
 const PATH = 'users';
@@ -19,7 +20,6 @@ export const usersRepo = {
       },
       (err) => {
         console.warn('[usersRepo] watchAll listener notice:', err.message);
-        cb([]);
       }
     );
   },
@@ -36,12 +36,26 @@ export const usersRepo = {
     );
   },
   async upsert(uid: string, user: Partial<User>) {
-    await setDoc(doc(db, PATH, uid), user as User, { merge: true });
+    try {
+      const cleaned = cleanForFirestore(user as Record<string, any>);
+      await setDoc(doc(db, PATH, uid), cleaned, { merge: true });
+    } catch (err: any) {
+      console.warn('[usersRepo] upsert notice:', err?.message || err);
+    }
   },
   async update(uid: string, patch: Partial<User>) {
-    await updateDoc(doc(db, PATH, uid), patch as Partial<User>);
+    try {
+      const cleaned = cleanForFirestore(patch as Record<string, any>);
+      await updateDoc(doc(db, PATH, uid), cleaned);
+    } catch (err: any) {
+      console.warn('[usersRepo] update notice:', err?.message || err);
+    }
   },
   async toggleActive(uid: string, active: boolean) {
-    await updateDoc(doc(db, PATH, uid), { active });
+    try {
+      await updateDoc(doc(db, PATH, uid), { active });
+    } catch (err: any) {
+      console.warn('[usersRepo] toggleActive notice:', err?.message || err);
+    }
   },
 };

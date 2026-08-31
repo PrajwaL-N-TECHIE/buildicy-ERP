@@ -8,12 +8,15 @@ import { Mail, LogOut, ShieldAlert, CheckCircle2, UserCheck, Layers, ChevronDown
 
 import { BuildicyLogo } from '@/components/common/BuildicyLogo';
 
+import { useOperationalNotifications } from '@/hooks/useOperationalNotifications';
+
 interface NavbarProps {
   onOpenNotifications: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenNotifications }) => {
-  const { currentUser, users, loginAsUser, logout, notifications } = useAuth();
+  const { currentUser, users, loginAsUser, logout } = useAuth();
+  const { unreadCount } = useOperationalNotifications();
 
   if (!currentUser) return null;
 
@@ -64,9 +67,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNotifications }) => {
           >
             <Mail className="h-4 w-4 text-primary" />
             <span className="hidden sm:inline font-semibold">Mail Log</span>
-            {notifications.length > 0 && (
+            {unreadCount > 0 && (
               <span className="ml-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground">
-                {notifications.length}
+                {unreadCount}
               </span>
             )}
           </Button>

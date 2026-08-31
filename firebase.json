@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "erp-buildicy",
     "public": "dist",
     "ignore": [
       "firebase.json",

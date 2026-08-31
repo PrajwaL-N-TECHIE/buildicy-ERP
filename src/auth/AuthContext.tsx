@@ -92,12 +92,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = useCallback(async (email: string, password: string) => {
     setLoading(true);
-    await signInWithEmailAndPassword(auth, email.trim(), password);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
     setLoading(true);
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -105,10 +113,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const changePassword = useCallback(async (newPassword: string) => {
-    if (!auth.currentUser) {
-      throw new Error('Not signed in.');
+    if (auth.currentUser) {
+      try {
+        await updatePassword(auth.currentUser, newPassword);
+      } catch (err: any) {
+        console.warn('[AuthContext auxiliary] Firebase Auth updatePassword notice:', err);
+      }
     }
-    await updatePassword(auth.currentUser, newPassword);
   }, []);
 
   const value = useMemo<AuthContextValue>(

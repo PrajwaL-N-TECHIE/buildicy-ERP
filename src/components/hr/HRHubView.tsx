@@ -12,7 +12,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { OrgTreeViewer } from '@/components/admin/OrgTreeViewer';
-import { sendWelcomeMessageToAll, sendWelcomeMessageToUser, hasWelcomeBeenSentToUser } from '@/firebase/notifications';
 import { 
   Cake, 
   Gift, 
@@ -36,6 +35,7 @@ import {
 } from 'lucide-react';
 
 import { useToast } from '@/context/ToastContext';
+import { sendWelcomeInviteEmail } from '@/firebase/notifications';
 
 export const HRHubView: React.FC = () => {
   const toast = useToast();
@@ -44,40 +44,18 @@ export const HRHubView: React.FC = () => {
   const [wishSuccessMsg, setWishSuccessMsg] = useState<string>('');
   const [birthdayFilter, setBirthdayFilter] = useState<'today' | 'this_month' | 'next_month' | 'all'>('today');
   const [viewMode, setViewMode] = useState<'directory' | 'org-tree'>('directory');
-  const [isSendingWelcome, setIsSendingWelcome] = useState<boolean>(false);
-  const [sendingUserWelcomeId, setSendingUserWelcomeId] = useState<string | null>(null);
 
-  const handleSendWelcomeToSingleUser = async (targetUser: User) => {
-    if (!currentUser || sendingUserWelcomeId) return;
-
-    if (hasWelcomeBeenSentToUser(targetUser)) {
-      toast.warning(
-        'Welcome Already Sent ✉️',
-        `Welcome message was already sent to ${targetUser.fullName} (${targetUser.email}). Welcome messages are limited to once per member.`
-      );
-      return;
-    }
-
-    setSendingUserWelcomeId(targetUser.id);
+  const handleSendWelcomeInvite = async (user: User) => {
     try {
-      const res = await sendWelcomeMessageToUser(targetUser, currentUser);
-      addAuditLog(
-        'WELCOME_EMAIL_SENT',
-        `User: ${targetUser.fullName}`,
-        `Individual welcome email dispatched to ${targetUser.email} via Resend Mail Gateway by ${currentUser.fullName}.`
-      );
-
-      if (res && res.success === false) {
-        toast.error('Resend Mail Error', res.error || `Could not send email to ${targetUser.email}`);
+      toast.info('Sending Welcome Invite... 📩', `Sending official welcome email invite to ${user.fullName} (${user.email})...`);
+      const res = await sendWelcomeInviteEmail(user);
+      if (res.success) {
+        toast.success('Welcome Invite Sent! 🎉', `Onboarding email invite successfully sent to ${user.fullName} (${user.email}).`);
       } else {
-        await updateUser(targetUser.id, { welcomeSent: true, welcomeSentAt: new Date().toISOString() });
-        toast.success('Welcome Email Dispatched! 🚀', `Special welcome message dispatched to ${targetUser.fullName} (${targetUser.email}) via Resend API.`);
+        toast.error('Invite Error', res.error || 'Failed to dispatch welcome email.');
       }
     } catch (err: any) {
-      console.error('Error sending individual welcome email:', err);
-      toast.error('Email Dispatch Failed', err?.message || 'Unexpected exception occurred while sending email.');
-    } finally {
-      setSendingUserWelcomeId(null);
+      toast.error('Dispatch Failed', err?.message || 'Could not send welcome invite email.');
     }
   };
 
@@ -565,35 +543,24 @@ export const HRHubView: React.FC = () => {
                             </span>
                           )}
 
-                          {/* Individual Welcome Message Button for each user row */}
-                          {hasWelcomeBeenSentToUser(u) ? (
-                            <span 
-                              className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-not-allowed shrink-0"
-                              title={`Welcome email was already sent to ${u.fullName} (${u.email}) - Limited to once per member.`}
-                            >
-                              <UserCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                              <span>Welcome Sent</span>
-                            </span>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleSendWelcomeToSingleUser(u)}
-                              disabled={sendingUserWelcomeId === u.id}
-                              className="h-7 px-2.5 text-[10px] font-bold border-purple-200 dark:border-slate-700 bg-purple-50 hover:bg-purple-100 text-purple-900 dark:text-purple-300 rounded-lg gap-1 shrink-0"
-                              title={`Send individual welcome email to ${u.fullName} (${u.email}) via Resend (Single-send limit)`}
-                            >
-                              <Mail className="w-3 h-3 text-purple-600" />
-                              <span>{sendingUserWelcomeId === u.id ? 'Sending...' : 'Send Welcome'}</span>
-                            </Button>
-                          )}
+                          {/* Send Welcome Invite Button */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSendWelcomeInvite(u)}
+                            className="h-7 text-xs px-2.5 font-bold border-purple-200 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg shadow-2xs transition-all flex items-center gap-1 shrink-0"
+                            title={`Send Welcome Team Invite Email to ${u.fullName}`}
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            <span>Send Invite</span>
+                          </Button>
 
                           {isAdmin && (
                             <Button 
                               size="sm" 
                               variant="ghost" 
                               onClick={() => handleOpenEditUser(u)} 
-                              className="h-7 w-7 p-0 text-slate-500 hover:text-purple-700 hover:bg-purple-100 rounded-lg"
+                              className="h-7 w-7 p-0 text-slate-500 hover:text-purple-700 hover:bg-purple-100 rounded-lg shrink-0"
                               title="Edit Personnel Member"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
