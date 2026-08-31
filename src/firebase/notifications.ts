@@ -492,8 +492,13 @@ export const sendForgotPasswordEmail = async (
   });
 };
 export const sendPasswordChangedEmail = async (
-  user: User
+  user: User,
+  newPassword?: string
 ): Promise<{ success: boolean; error?: string }> => {
+  const passBox = newPassword
+    ? `<div class="detail-item"><span class="label">🔑 Updated Password:</span> <strong style="color: #7c3aed; font-family: monospace; font-size: 15px;">${newPassword}</strong></div>`
+    : '';
+
   const html = buildEmailTemplate(
     'Security Notice: Account Password Changed 🔐',
     'Account Security Notice',
@@ -503,6 +508,7 @@ export const sendPasswordChangedEmail = async (
       <div class="detail-box" style="border-left-color: #10b981;">
         <div class="detail-item"><span class="label">👤 Account Name:</span> ${user.fullName}</div>
         <div class="detail-item"><span class="label">📧 Email Address:</span> ${user.email}</div>
+        ${passBox}
         <div class="detail-item"><span class="label">⏰ Changed Timestamp:</span> ${new Date().toLocaleString()}</div>
         <div class="detail-item"><span class="label">🛡️ Status:</span> Password Updated Successfully</div>
       </div>
@@ -514,9 +520,46 @@ export const sendPasswordChangedEmail = async (
     id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     to: [user.email],
     subject: `[Buildicy ERP] 🔐 Security Notice: Password Changed for ${user.fullName}`,
-    bodyText: `Hello ${user.fullName},\n\nYour Buildicy ERP account password was successfully updated on ${new Date().toLocaleString()}.\n\nIf you did not perform this change, please contact your administrator immediately.`,
+    bodyText: `Hello ${user.fullName},\n\nYour Buildicy ERP account password was successfully updated on ${new Date().toLocaleString()}.${newPassword ? `\nNew Password: ${newPassword}` : ''}\n\nIf you did not perform this change, please contact your administrator immediately.`,
     htmlText: html,
     triggerEvent: 'PASSWORD_CHANGED',
+    createdAt: new Date().toISOString(),
+  });
+};
+
+export const sendProjectAssignmentEmail = async (
+  project: Project,
+  assignedUser: User,
+  assigner: User | null,
+  allProjectMembers: User[]
+): Promise<{ success: boolean; error?: string }> => {
+  const assignerName = assigner ? formatUserRole(assigner) : 'Administrator';
+  const rosterStr = allProjectMembers.map(m => m.fullName).join(', ') || assignedUser.fullName;
+
+  const html = buildEmailTemplate(
+    'New Project Assignment 🚀',
+    'Project Workgroup',
+    `
+      <p>Hello <strong>${assignedUser.fullName}</strong>,</p>
+      <p>You have been assigned to project <strong>${project.name}</strong> by <strong>${assignerName}</strong>.</p>
+      <div class="detail-box" style="border-left-color: #7c3aed;">
+        <div class="detail-item"><span class="label">🎯 Project Name:</span> <strong>${project.name}</strong></div>
+        <div class="detail-item"><span class="label">👤 Assigned Member:</span> ${assignedUser.fullName} (${assignedUser.email})</div>
+        <div class="detail-item"><span class="label">👑 Assigned By:</span> ${assignerName}</div>
+        <div class="detail-item"><span class="label">👥 Team Roster:</span> ${rosterStr}</div>
+        <div class="detail-item"><span class="label">📅 Target Deadline:</span> ${project.deadline?.dueDate || 'Not set'}</div>
+      </div>
+      <p>Please log in to your Buildicy ERP workspace to view active tasks, collaborate with teammates, and submit project deliverables.</p>
+    `
+  );
+
+  return await logNotification({
+    id: `mail-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    to: [assignedUser.email],
+    subject: `[Buildicy ERP] 🚀 Assigned to Project: ${project.name}`,
+    bodyText: `Hello ${assignedUser.fullName},\n\nYou have been assigned to project "${project.name}" by ${assignerName}.\n\nLog in at https://erp.buildicy.com to view project details.`,
+    htmlText: html,
+    triggerEvent: 'PROJECT_ASSIGNED',
     createdAt: new Date().toISOString(),
   });
 };

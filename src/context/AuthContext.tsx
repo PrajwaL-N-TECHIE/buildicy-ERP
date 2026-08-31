@@ -65,6 +65,7 @@ import {
   sendLeaveFinalApprovedByAdminEmail,
   sendLeaveRejectedEmail,
   sendPasswordChangedEmail,
+  sendProjectAssignmentEmail,
 } from '@/firebase/notifications';
 
 import { USE_FIRESTORE_DATA } from '@/data/firestore';
@@ -586,7 +587,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updatedInFirebase ? `Updated password via Firebase Auth and database.` : `Updated password in ERP database.`);
 
     try {
-      await sendPasswordChangedEmail(currentUser);
+      await sendPasswordChangedEmail(currentUser, newPass);
     } catch (mailErr) {
       console.warn('[AuthContext] sendPasswordChangedEmail notice:', mailErr);
     }
@@ -1224,10 +1225,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     addAuditLog('PROJECT_CREATED', `Project: ${newProj.name}`, `Created project ${newProj.name}`);
+
+    // Send Project Assignment Email to all assigned members
+    if (newProj.memberIds && newProj.memberIds.length > 0) {
+      const allUsers = users && users.length > 0 ? users : SEED_USERS;
+      const assignedUsers = allUsers.filter(u => newProj.memberIds.includes(u.id));
+      for (const assignedUser of assignedUsers) {
+        try {
+          await sendProjectAssignmentEmail(newProj, assignedUser, currentUser, assignedUsers);
+        } catch (err) {
+          console.warn(`[AuthContext] Failed to send project assignment email to ${assignedUser.email}:`, err);
+        }
+      }
+    }
+
     refreshData();
   };
 
   const updateProject = async (projectId: string, data: Partial<Project>) => {
+    const existingProj = projects.find(p => p.id === projectId);
+    const oldMemberIds = existingProj?.memberIds || [];
+
     const updated = projects.map(p => p.id === projectId ? { ...p, ...data } : p);
     setProjects(updated);
     saveProjects(updated);
@@ -1237,6 +1255,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await projectsRepo.upsert(projectId, data);
       } catch (err) {
         console.warn('[AuthContext] Firestore updateProject error:', err);
+      }
+    }
+
+    // Send project assignment email to newly added members
+    if (data.memberIds && Array.isArray(data.memberIds)) {
+      const newlyAssignedIds = data.memberIds.filter(id => !oldMemberIds.includes(id));
+      const targetProj = updated.find(p => p.id === projectId) || existingProj || {
+        id: projectId,
+        name: data.name || 'Project',
+        memberIds: data.memberIds,
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+      const allUsers = users && users.length > 0 ? users : SEED_USERS;
+      const allProjectMembers = allUsers.filter(u => data.memberIds!.includes(u.id));
+
+      for (const memberId of newlyAssignedIds) {
+        const assignedUser = allUsers.find(u => u.id === memberId);
+        if (assignedUser) {
+          try {
+            await sendProjectAssignmentEmail(targetProj, assignedUser, currentUser, allProjectMembers);
+          } catch (err) {
+            console.warn(`[AuthContext] Failed to send project assignment email to ${assignedUser.email}:`, err);
+          }
+        }
       }
     }
 
